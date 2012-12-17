@@ -139,7 +139,8 @@ public with sharing class SObjectDataLoader
 			new Set<String>
 				{ 'OwnerId',
 				  'CreatedById',
-				  'LastModifiedById'
+				  'LastModifiedById',
+				  'RecordTypeId'
 				};
 				
 		// Standard child relationships that are not included when using the auto config
@@ -599,5 +600,48 @@ public with sharing class SObjectDataLoader
 		System.assertEquals(10, opportunities[9].OpportunityLineItems[0].UnitPrice);
 		System.assertEquals('Test Name 9 : Product : 9', opportunities[9].OpportunityLineItems[9].PricebookEntry.Product2.Name);
 		System.assertEquals(standardPriceBook.Id, opportunities[9].OpportunityLineItems[9].PricebookEntry.Pricebook2Id);		
+	}
+
+	/**
+		--Without Whitelisting RecordTypeId, the autoconfig serialize/deserialize
+			will try to insert a new RecordType object which throws:
+			'System.TypeException: DML not allowed on RecordType'
+
+		--Test uses dynamic binding to prevent compile-time errors in orgs without RecordTypes enabled
+		--Currently, the test method only tests the logic if there are 2+ RecordTypes on the Account object
+			otherwise, the if statement will silently ignore the rest of the testMethod.
+	**/
+
+	@isTest(seeAllData=False)
+	private static void shouldNotTryToInsertRecordType(){
+		List<RecordType> accountRecordTypes = [SELECT Id, DeveloperName FROM RecordType WHERE sObjectType = 'Account' AND isActive = TRUE];
+		//Only run this test if there are multiple active recordtypes on Account object
+		if (accountRecordTypes.size() > 0){
+			List<sObject> testAccounts = new List<Account>();
+			for (RecordType aRT : accountRecordTypes){
+				sObject testAccount = new Account(Name = 'Test' + aRT.DeveloperName);
+				
+				//dynamic binding will prevent any compile time errors if RecordTypeId field doesn't exist
+				testAccount.put('RecordTypeId', aRT.Id);
+				testAccounts.add(testAccount);
+			}
+			insert testAccounts;
+			Set<Id> newAccountIds = new Set<Id>();
+			for (sObject myAccount : testAccounts){
+				newAccountIds.add(myAccount.Id);
+			}
+			String serializedData = SObjectDataLoader.serialize(newAccountIds);
+			Set<Id> resultIds = SObjectDataLoader.deserialize(serializedData);
+			
+			//dynamic soql will prevent any compile time errors if RecordTypeId field doesn't exist
+			String accountsQuery = 'SELECT Id, RecordTypeId FROM Account WHERE Id IN :newAccountIds';
+			testAccounts = Database.query(accountsQuery);
+			Set<Id> recordTypeIdsOfNewAccounts = new Set<Id>();
+
+			for (sObject myAccount : testAccounts){
+				recordTypeIdsOfNewAccounts.add((Id) myAccount.get('RecordTypeId'));
+			}
+			system.assertEquals(recordTypeIdsOfNewAccounts.size(), accountRecordTypes.size());
+		}
 	}
 }
