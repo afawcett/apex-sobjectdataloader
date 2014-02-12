@@ -40,12 +40,14 @@ public with sharing class SObjectDataLoader
 		protected Set<Schema.SObjectField> followRelationships;
 		protected Set<Schema.SObjectField> followChildRelationships;
 		protected Set<Schema.SObjectField> omitFields;
+        protected Map<Schema.SObjectType, Map<String, Schema.SObjectField>> objectFieldDescribeMap;
 		
 		public SerializeConfig()
 		{	
 			followRelationships = new Set<Schema.SObjectField>();
 			followChildRelationships = new Set<Schema.SObjectField>();
 			omitFields = new Set<Schema.SObjectField>(); 			
+			objectFieldDescribeMap = new Map<Schema.SObjectType, Map<String, Schema.SObjectField>>();
 		}
 		
 		/**
@@ -126,12 +128,28 @@ public with sharing class SObjectDataLoader
 			}
 							
 			// Follow lookup relationships to long as they have not previously been added as child references and are not whitelisted
-			Map<String, Schema.SObjectField> sObjectFields = sObjectDescribe.fields.getMap();
+			Map<String, Schema.SObjectField> sObjectFields = objectFieldDescribeMap.get(sObjectType);
+			if (sObjectFields == null)
+			{
+				sObjectFields = sObjectDescribe.fields.getMap();
+				objectFieldDescribeMap.put(sObjectType, sObjectFields);	
+			}
+			
+			//If the Sobject Field is referenceTo as 'User' and 'Organization' then restrict it to search its Relationships 
 			for(Schema.SObjectField sObjectField : sObjectFields.values())
-				if(sObjectField.getDescribe().getType() == Schema.DisplayType.Reference) 
-					if(!followChildRelationships.contains(sObjectField) && !relationshipWhitelist.contains(sObjectField.getDescribe().getName()))
+				if(sObjectField.getDescribe().getType() == Schema.DisplayType.Reference)
+				{
+					Boolean omitRefernceToFields = false;
+					for(Schema.sObjectType refernceToType : sObjectField.getDescribe().getReferenceTo()){
+						if(referenceToWhitelist.contains(refernceToType.getDescribe().getName()))
+							omitRefernceToFields = true;
+					}
+					if(!followChildRelationships.contains(sObjectField) && !relationshipWhitelist.contains(sObjectField.getDescribe().getName()) && !omitRefernceToFields)
 						follow(sObjectField).
 							searchRelationships(sObjectField.getDescribe().getReferenceTo()[0], lookupDepth+1, childDepth, false, searched);
+				}
+                else if (fieldWhitelist.contains(sObjectField.getDescribe().getName()))
+                    omit(sObjectField);
 		}
 
 		// Standard fields that are not included when using the auto config
@@ -140,7 +158,8 @@ public with sharing class SObjectDataLoader
 				{ 'OwnerId',
 				  'CreatedById',
 				  'LastModifiedById',
-				  'RecordTypeId'
+				  'RecordTypeId',
+				  'ProfileId'
 				};
 				
 		// Standard child relationships that are not included when using the auto config
@@ -159,6 +178,22 @@ public with sharing class SObjectDataLoader
 				  'OpenActivities', 
 				  'Histories', 
 				  'Feeds'};		
+	
+		// Standard RefernceTo that are not included when using the auto config	
+		private Set<String> referenceToWhitelist = 
+			new Set<String>
+				{ 'User',
+				  'Organization'
+				};
+    
+        // Standard fiels to be omitted
+        private Set<String> fieldWhitelist = 
+            new Set<String>
+                {
+                	'LastViewedDate',
+                	'LastReferencedDate'
+                };
+				
 	}
 	
 	
@@ -170,13 +205,34 @@ public with sharing class SObjectDataLoader
 		// Serialize based on no prior knowledge of the objects
 		if(ids==null || ids.size()==0)
 			throw new SerializerException('List of Ids cannot be null or empty.');
-		return serialize(ids, new SerializeConfig().auto(new List<Id>(ids)[0].getSObjectType()));
+		
+		//Map Containing strategy By SObjectType of Ids	
+		Map <Schema.SObjectType,SerializeConfig> strategyBySObjectType = new Map <Schema.SObjectType,SerializeConfig>();
+	
+		for(Id idRecord : ids)
+		{
+			Schema.SObjectType sObjectType = idRecord.getSObjectType();
+			if(strategyBySObjectType.get(sObjectType)==null)
+			{
+				strategyBySObjectType.put(sObjectType,new SerializeConfig().auto(idRecord.getSObjectType()));
+			}
+		}
+		
+		return serialize(ids,strategyBySObjectType);
 	}
 	
 	/**
 	 * Serialize the given records using the given configuration
 	 **/
 	public static String serialize(Set<Id> ids, SerializeConfig strategy)
+	{
+		return serialize(ids, new Map<Schema.SObjectType, SerializeConfig> { new List<Id>(ids)[0].getSObjectType() => strategy });
+	}
+
+	/**
+	 * Serialize the given records using the given configurationMap
+	 **/
+	public static String serialize(Set<Id> ids, Map <Schema.SObjectType,SerializeConfig> strategyBySObjectType)
 	{			
 		// Validate parameters
 		if(ids==null || ids.size()==0)
@@ -188,9 +244,29 @@ public with sharing class SObjectDataLoader
 		recordsToBundle.recordSetBundlesByType = new Map<String, RecordSetBundle>();
 		
 		// Begin recursive serialize from given records through to related records
-		Schema.SObjectType sObjectType = new List<Id>(ids)[0].getSObjectType();
-		serialize(ids, sObjectType, null, strategy, 0, 0, recordsToBundle);
-				
+		
+		//Map containing Key as SObjectType and Value as set of Id's having same SObjectType as key
+		Map <Schema.SObjectType,Set<Id>> recordMapToSerialize = new Map <Schema.SObjectType,Set<Id>>();
+		for(Id idRecord : ids)
+		{
+			Schema.SObjectType sObjectType = idRecord.getSObjectType();
+			if(recordMapToSerialize.get(sObjectType)!=null)
+			{
+				recordMapToSerialize.get(sObjectType).add(idRecord);
+			}
+			else
+			{
+				Set<Id> idSet = new Set<Id>();
+				idSet.add(idRecord);
+				recordMapToSerialize.put(sObjectType,idSet);
+			}
+		}
+		
+		Set<Schema.SObjectType> sObjectTypeSet = recordMapToSerialize.keySet();
+		for(Schema.SObjectType sobjectTypes : sObjectTypeSet)
+		{
+			serialize(recordMapToSerialize.get(sobjectTypes), sobjectTypes, null, strategyBySObjectType.get(sobjectTypes), 0, 0, recordsToBundle);
+		}		
 		// Serialise the records bundle container		
 		return JSON.serialize(recordsToBundle);		 		
 	}
@@ -219,25 +295,40 @@ public with sharing class SObjectDataLoader
 		Map<String, Schema.SObjectType> sObjectsByType = Schema.getGlobalDescribe();
 		for(RecordSetBundle recordSetBundle : recordsBundle.recordSetBundles)
 		{
+			//List of IDs To be processed in recordSetBundle
+			List<Id> idsProcessedInRecordSet = new List<Id>();
 			// Determine lookup / relationship fields to update prior to inserting these records
 			Schema.SObjectType sObjectType = sObjectsByType.get(recordSetBundle.ObjectType);
 			Map<String, Schema.SObjectField> sObjectFields = sObjectType.getDescribe().fields.getMap();
 			List<Schema.SObjectField> relationshipsFields = new List<Schema.SObjectField>();
+			//adding selfrefernce Fields in set 
+			Set<String> selfReferenceFields = new Set<String>();
 			for(Schema.SObjectField sObjectField : sObjectFields.values())
+			{
 				if(sObjectField.getDescribe().getType() == Schema.DisplayType.Reference) 
-					relationshipsFields.add(sObjectField);
-									
+					relationshipsFields.add(sObjectField);					
+					for(Schema.sObjectType refernceToType : sObjectField.getDescribe().getReferenceTo())
+					{					
+					 	if(refernceToType.getDescribe().getName().equals(sObjectType.getDescribe().getName()))
+					 	{
+					 		selfReferenceFields.add(sObjectField.getDescribe().getName());
+					 	}
+					}
+					
+			}
 			// Prepare records for insert
-			List<SObject> recordsToInsert = new List<SObject>();
 			List<UnresolvedReferences> unresolvedReferencesByRecord = new List<UnresolvedReferences>(); 
 			for(SObject orignalRecord : recordSetBundle.Records)
 			{
 				// Clone the deserialised SObject to remove the original Id prior to inserting it
-				SObject newRecord = orignalRecord.clone();
-				recordsToInsert.add(newRecord);
-				// Map the new cloned record to its old Id (once inserted this can be used to obtain the new id)
-				recordsByOriginalId.put(orignalRecord.Id, newRecord);
-				// Update foreign key references / lookups / master-detail relationships
+				SObject newRecord = orignalRecord.clone().clone();
+				if(recordsByOriginalId.get(orignalRecord.Id)==null){
+					// Map the new cloned record to its old Id (once inserted this can be used to obtain the new id)
+					recordsByOriginalId.put(orignalRecord.Id, newRecord);
+					// Update foreign key references / lookups / master-detail relationships
+					//Set of containing all Ids to process in a RecordSetBundle
+					idsProcessedInRecordSet.add(orignalRecord.Id);
+				}
 				if(relationshipsFields.size()>0)
 				{
 					Set<Schema.SObjectField> unresolvedFieldReferences = new Set<Schema.SObjectField>(); 
@@ -247,7 +338,11 @@ public with sharing class SObjectDataLoader
 						Id oldRelatedRecordId = (Id) orignalRecord.get(sObjectField);
 						SObject newRelatedRecord = recordsByOriginalId.get(oldRelatedRecordId);
 						if(newRelatedRecord!=null)
-							newRecord.put(sObjectField, newRelatedRecord.Id);
+						{
+							//If Field is selfRefernce then field ID is not updated
+							if(!selfReferenceFields.contains(sObjectField.getDescribe().getName()))
+								newRecord.put(sObjectField, newRelatedRecord.Id);
+						}
 						else
 							unresolvedFieldReferences.add(sObjectField);
 					}
@@ -266,13 +361,101 @@ public with sharing class SObjectDataLoader
 			if(callback!=null && unresolvedReferencesByRecord.size()>0)
 				callback.unresolvedReferences(sObjectType, unresolvedReferencesByRecord);
 			
-			// Insert cloned deserialised records
-			recordSetBundle.Records = recordsToInsert;
-			insert recordSetBundle.Records;
+			// Map to insert records by level.Top level is the parent record and level lower to it is child of that parent
+			// Levels are based upon the parent child relationship among the same object type records	
+			Map<Integer,Map<Id,Sobject>>  mapToInsertByLevel = new Map<Integer,Map<Id,Sobject>>();
+			Integer listSize = idsProcessedInRecordSet.size();
+			//Set of ID's already inserted in level map
+			Set<Id>idsInsertedInLevelMap = new Set<Id>();
+			for(Integer i=listSize-1; i>=0; i--)
+			{
+				Id orignalRecordId = idsProcessedInRecordSet.get(i);
+				fetchParentRecordsForChild(orignalRecordId,1,selfReferenceFields,mapToInsertByLevel,recordsByOriginalId,idsInsertedInLevelMap);
+			}
+			//List to contain all records that are inserted 
+			List<Sobject> totalRecordsInserted = new List<Sobject>();
+			
+			//insert the records;Resolve the selfrefernce Relationships	
+			//Highest level records are inserted first
+			for(Integer mapLevel=mapToInsertByLevel.size();mapLevel>0;mapLevel--)
+			{
+				List<Sobject> recordsToInsert = new List<Sobject>();
+				recordsToInsert =  mapToInsertByLevel.get(mapLevel).values();
+				totalRecordsInserted.addAll(recordsToInsert);
+				// Insert cloned deserialised records
+				insert recordsToInsert;
+				//Id of the Parent record are updated in child records
+				if(mapLevel-1>0){
+					List<Sobject> updateSelfRefernceFieldsList = mapToInsertByLevel.get(mapLevel-1).values();
+					for(SObject objectToUpdate : updateSelfRefernceFieldsList)
+					{
+						for(String fieldName : selfReferenceFields)
+						{
+							Id idToProcess = (Id)objectToUpdate.get(fieldName);
+							if(idToProcess!=null && recordsByOriginalId.get(idToProcess)!=null && idsInsertedInLevelMap.contains(idToProcess))
+							{
+								objectToUpdate.put(fieldName,recordsByOriginalId.get(idToProcess).iD);
+							}
+						}
+					}
+				}
+			}
+			recordSetBundle.Records = totalRecordsInserted;
 		}
-		
 		// Return Id list from the first bundle set
 		return new Map<Id, SObject>(recordsBundle.recordSetBundles[0].Records).keySet();
+	}
+
+	/**
+	 * Fetch the parent for the selfrefernce Child Record
+	 **/
+	private static void fetchParentRecordsForChild(ID oldRecordId,Integer level,Set<String>selfReferenceFields,Map<Integer,Map<Id,Sobject>> mapToInsertByLevel ,Map<Id, SObject> recordsByOriginalId,Set<Id> idsInsertedInLevelMap){
+		//If record is already processed.Find the level of record.
+		//If inserted level is less than current level then delete the record from that level
+		//and insert at the current level
+		Boolean insertRecordInMapFlag = true;
+		if(idsInsertedInLevelMap.contains(oldRecordId))
+		{
+			insertRecordInMapFlag = false;
+			Integer mapSize = mapToInsertByLevel.size();
+			Integer recordFoundOnLevel = 0;
+			//if record already exist in map then determine its level
+			for(Integer i=1 ;i <= mapSize;i++)
+			{
+				Set<Id> LevelByIdSet = mapToInsertByLevel.get(i).keySet();
+				if(LevelByIdSet.contains(oldRecordId))
+				{
+					recordFoundOnLevel =i;
+					break;
+				}
+			}
+			//Delete the record from Map if it is present at lower level than the current level
+			if(recordFoundOnLevel!=0 && recordFoundOnLevel < level)
+			{	
+				mapToInsertByLevel.get(recordFoundOnLevel).remove(oldRecordId);
+				insertRecordInMapFlag = true;
+			}
+		}
+		if(insertRecordInMapFlag)
+		{	
+			if(mapToInsertByLevel.get(level)!=null){
+				mapToInsertByLevel.get(level).put(oldRecordId,recordsByOriginalId.get(oldRecordId));
+			}
+			else
+			{
+				mapToInsertByLevel.put(level,new Map<Id,Sobject>{oldRecordId=>recordsByOriginalId.get(oldRecordId)});
+			}
+		}
+		
+
+		idsInsertedInLevelMap.add(oldRecordId);
+		for(String fieldName : selfReferenceFields){
+			Id idToProcess = (Id)recordsByOriginalId.get(oldRecordId).get(fieldName);
+			if(idToProcess!=null && recordsByOriginalId.get(idToProcess)!=null)
+			{
+				fetchParentRecordsForChild(idToProcess,level+1,selfReferenceFields,mapToInsertByLevel,recordsByOriginalId,idsInsertedInLevelMap);	
+			}	
+		}
 	}
 			
 	private static void serialize(Set<ID> ids, Schema.SObjectType sObjectType, Schema.SObjectField queryByIdField, SerializeConfig config, Integer lookupDepth, Integer childDepth, RecordsBundle recordsToBundle)
@@ -286,7 +469,16 @@ public with sharing class SObjectDataLoader
 			
 		// Describe object and determine fields to serialize
 		Schema.DescribeSObjectResult sObjectDesc = sObjectType.getDescribe();
-		Map<String, Schema.SObjectField> sObjectFields = sObjectDesc.fields.getMap();
+		
+		//updating so that the we dont query for objects that cannot be queried:-
+		if(!sObjectDesc.queryable || !sObjectDesc.isCreateable()) return;
+		
+		Map<String, Schema.SObjectField> sObjectFields = config.objectFieldDescribeMap.get(sObjectType);
+		if (sObjectFields == null)
+		{
+			sObjectFields = sObjectDesc.fields.getMap();
+			config.objectFieldDescribeMap.put(sObjectType, sObjectFields);
+		}
 		List<Schema.SObjectField> sObjectFieldsToSerialize = listFieldsToSerialize(sObjectFields, config);
 						
 		// Query records to serialize
@@ -429,219 +621,4 @@ public with sharing class SObjectDataLoader
 		public List<SObject> Records;	
 	}
 	
-	@IsTest(seeAllData=true) // http://stackoverflow.com/questions/9164986/how-do-i-avoid-standard-price-not-defined-when-unit-testing-an-opportunitylineit 
-	public static void testManuallyConfigured()
-	{				
-		// Save point to rollback test data
-		System.Savepoint savePoint = Database.setSavepoint();
-		
-		// Serialise test data into JSON record set bundle via manual configuration
-		String serializedData = SObjectDataLoader.serialize(createOpportunities(), 
-			new SObjectDataLoader.SerializeConfig().
-				followChild(OpportunityLineItem.OpportunityId). 	// Serialize any related OpportunityLineItem's (children)
-					follow(OpportunityLineItem.PricebookEntryId). 	// Serialize any related PricebookEntry's
-						follow(PricebookEntry.Product2Id). 			// Serialize any related Products's
-						omit(OpportunityLineItem.UnitPrice)); 		// Do not serialize the UnitPrice, as TotalPrice is enough and both cannot exist together
-					
-		// Rollback test data
-		Database.rollback(savePoint);
-		
-		// Recreate test data via deserialize
-		Set<ID> resultIds = SObjectDataLoader.deserialize(serializedData, new ApplyStandardPricebook());
-		assertResults(resultIds);
-	}
-	
-	@IsTest(seeAllData=true) // http://stackoverflow.com/questions/9164986/how-do-i-avoid-standard-price-not-defined-when-unit-testing-an-opportunitylineit
-	public static void testAutoConfigured()
-	{
-		// Save point to rollback test data
-		System.Savepoint savePoint = Database.setSavepoint();
-		
-		// Serialise test data into JSON record set bundle via auto configuraiton (with some manual tweaks)
-		String serializedData = SObjectDataLoader.serialize(createOpportunities(),
-			new SObjectDataLoader.SerializeConfig().
-				auto(Opportunity.sObjectType). 			// Automatically determine child and related object references needed (calls follow methods)
-				omit(OpportunityLineItem.UnitPrice). 	// Do not serialize the UnitPrice, as TotalPrice is enough and both cannot exist together
-				omit(PricebookEntry.Pricebook2Id).		// Do not serialize any Pricebook references (these will be reassoicated apone deserialization)
-				omit(Opportunity.Pricebook2Id));		// Do not serialize any Pricebook references (these will be reassoicated apone deserialization)
-
-		// Rollback test data
-		Database.rollback(savePoint);
-		
-		// Recreate test data via deserialize
-		Set<ID> resultIds = SObjectDataLoader.deserialize(serializedData, new ApplyStandardPricebook());
-		assertResults(resultIds);				
-	}
-	
-	/**
-	 * Test implemetnation of IDeserializeCallback, automatically applies Standard Pricebook to new PricebookEntry's
-	 **/
-	private class ApplyStandardPricebook implements SObjectDataLoader.IDeserializeCallback
-	{
-		private Pricebook2 standardPricebook;
-		
-		public ApplyStandardPricebook()
-		{
-			standardPricebook = [select Id from Pricebook2 where IsStandard = true];				
-		}
-		
-		public void unresolvedReferences(Schema.SObjectType sObjectType, List<SObjectDataLoader.UnresolvedReferences> unresolvedReferences)
-		{
-			if(sObjectType == PricebookEntry.sObjectType) // PricebookEntry object?
-				for(SObjectDataLoader.UnresolvedReferences unresolvedReference : unresolvedReferences)
-					if(unresolvedReference.References.contains(PricebookEntry.Pricebook2Id)) // Pricebook2Id field?
-						unresolvedReference.Record.put(PricebookEntry.Pricebook2Id, standardPricebook.id); // Set Standard Pricebook
-		}		
-	}
-	
-	private static Set<ID> createOpportunities()
-	{
-		// Grab the Standard Pricebook (cannot create these via Apex)
-		Pricebook2 pb = [select Id from Pricebook2 where IsStandard = true];	
-				
-		// Insert Opportunities
-		List<Opportunity> opps = new List<Opportunity>();
-		List<List<Product2>> productsByOpp = new List<List<Product2>>(); 		
-		List<List<PricebookEntry>> pricebookEntriesByOpp = new List<List<PricebookEntry>>(); 		
-		List<List<OpportunityLineItem>> oppLinesByOpp = new List<List<OpportunityLineItem>>(); 		
-		for(Integer o=0; o<10; o++)
-		{
-			Opportunity opp = new Opportunity();
-			opp.Name = 'Test Name ' + o;
-			opp.StageName = 'Open';
-			opp.CloseDate = System.today();
-			opps.add(opp);
-			List<Product2> products = new List<Product2>();
-			List<PricebookEntry> pricebookEntries = new List<PricebookEntry>();
-			List<OpportunityLineItem> oppLineItems = new List<OpportunityLineItem>();
-			for(Integer i=0; i<o+1; i++)
-			{						
-				Product2 product = new Product2();
-				product.Name = opp.Name + ' : Product : ' + i;
-				products.add(product);
-				PricebookEntry pbe = new PricebookEntry();
-				pbe.UnitPrice = 10;
-				pbe.IsActive = true;
-				pbe.UseStandardPrice = false;
-				pbe.Pricebook2Id = pb.Id;
-				pricebookEntries.add(pbe);
-				OpportunityLineItem oppLineItem = new OpportunityLineItem();
-				oppLineItem.Quantity = 1;
-				oppLineItem.TotalPrice = 10;
-				oppLineItems.add(oppLineItem);
-			}
-			productsByOpp.add(products);
-			pricebookEntriesByOpp.add(pricebookEntries);
-			oppLinesByOpp.add(oppLineItems);				
-		}
-		// Insert Opportunities
-		insert opps;
-		// Insert Products
-		List<Product2> allProducts = new List<Product2>(); 
-		for(List<Product2> products : productsByOpp)
-		{
-			allProducts.addAll(products);			
-		}
-		insert allProducts;
-		// Insert Pricebooks
-		Integer oppIdx = 0;			
-		List<PricebookEntry> allPricebookEntries = new List<PricebookEntry>();				
-		for(List<PricebookEntry> pricebookEntries : pricebookEntriesByOpp)
-		{
-			List<Product2> products = productsByOpp[oppIdx++];
-			Integer lineIdx = 0;
-			for(PricebookEntry pricebookEntry : pricebookEntries)
-			{
-				pricebookEntry.Product2Id = products[lineIdx++].Id;
-			}
-			allPricebookEntries.addAll(pricebookEntries);
-		}			
-		insert allPricebookEntries;
-		// Insert Opportunity Lines
-		oppIdx = 0;						
-		List<OpportunityLineItem> allOppLineItems = new List<OpportunityLineItem>(); 			
-		for(List<OpportunityLineItem> oppLines : oppLinesByOpp)
-		{
-			List<PricebookEntry> pricebookEntries = pricebookEntriesByOpp[oppIdx];
-			Integer lineIdx = 0;
-			for(OpportunityLineItem oppLine : oppLines)
-			{
-				oppLine.OpportunityId = opps[oppIdx].Id;
-				oppLine.PricebookEntryId = pricebookEntries[lineIdx++].Id;
-			}
-			allOppLineItems.addAll(oppLines);
-			oppIdx++;
-		}			
-		insert allOppLineItems;		
-		return new Map<Id, Opportunity>(opps).keySet();			
-	}
-	
-	private static void assertResults(Set<ID> opportunityIds)
-	{
-		Pricebook2 standardPriceBook = [select Id from Pricebook2 where IsStandard = true];
-		List<Opportunity> opportunities = 
-			[select Id, Name, Amount, 
-				(select id, PricebookEntry.Product2.Name, PricebookEntry.Pricebook2Id, UnitPrice 
-				 from OpportunityLineItems 
-				 order by PricebookEntry.Product2.Name) 
-				from Opportunity 
-				where Id in :opportunityIds 
-				order by Name];
-		System.assertEquals(10, opportunities.size());
-		System.assertEquals('Test Name 0', opportunities[0].Name);
-		System.assertEquals(10, opportunities[0].Amount);
-		System.assertEquals('Test Name 9', opportunities[9].Name);
-		System.assertEquals(100, opportunities[9].Amount);		
-		System.assertEquals(1, opportunities[0].OpportunityLineItems.size());
-		System.assertEquals(10, opportunities[0].OpportunityLineItems[0].UnitPrice);
-		System.assertEquals('Test Name 0 : Product : 0', opportunities[0].OpportunityLineItems[0].PricebookEntry.Product2.Name);
-		System.assertEquals(standardPriceBook.Id, opportunities[0].OpportunityLineItems[0].PricebookEntry.Pricebook2Id);
-		System.assertEquals(10, opportunities[9].OpportunityLineItems.size());
-		System.assertEquals(10, opportunities[9].OpportunityLineItems[0].UnitPrice);
-		System.assertEquals('Test Name 9 : Product : 9', opportunities[9].OpportunityLineItems[9].PricebookEntry.Product2.Name);
-		System.assertEquals(standardPriceBook.Id, opportunities[9].OpportunityLineItems[9].PricebookEntry.Pricebook2Id);		
-	}
-
-	/**
-		--Without Whitelisting RecordTypeId, the autoconfig serialize/deserialize
-			will try to insert a new RecordType object which throws:
-			'System.TypeException: DML not allowed on RecordType'
-
-		--Test uses dynamic binding to prevent compile-time errors in orgs without RecordTypes enabled
-		--Currently, the test method only tests the logic if there are 2+ RecordTypes on the Account object
-			otherwise, the if statement will silently ignore the rest of the testMethod.
-	**/
-
-	@isTest(seeAllData=False)
-	private static void shouldNotTryToInsertRecordType(){
-		List<RecordType> accountRecordTypes = [SELECT Id, DeveloperName FROM RecordType WHERE sObjectType = 'Account' AND isActive = TRUE];
-		//Only run this test if there are multiple active recordtypes on Account object
-		if (accountRecordTypes.size() > 0){
-			List<sObject> testAccounts = new List<Account>();
-			for (RecordType aRT : accountRecordTypes){
-				sObject testAccount = new Account(Name = 'Test' + aRT.DeveloperName);
-				
-				//dynamic binding will prevent any compile time errors if RecordTypeId field doesn't exist
-				testAccount.put('RecordTypeId', aRT.Id);
-				testAccounts.add(testAccount);
-			}
-			insert testAccounts;
-			Set<Id> newAccountIds = new Set<Id>();
-			for (sObject myAccount : testAccounts){
-				newAccountIds.add(myAccount.Id);
-			}
-			String serializedData = SObjectDataLoader.serialize(newAccountIds);
-			Set<Id> resultIds = SObjectDataLoader.deserialize(serializedData);
-			
-			//dynamic soql will prevent any compile time errors if RecordTypeId field doesn't exist
-			String accountsQuery = 'SELECT Id, RecordTypeId FROM Account WHERE Id IN :newAccountIds';
-			testAccounts = Database.query(accountsQuery);
-			Set<Id> recordTypeIdsOfNewAccounts = new Set<Id>();
-
-			for (sObject myAccount : testAccounts){
-				recordTypeIdsOfNewAccounts.add((Id) myAccount.get('RecordTypeId'));
-			}
-			system.assertEquals(recordTypeIdsOfNewAccounts.size(), accountRecordTypes.size());
-		}
-	}
 }
