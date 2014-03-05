@@ -6,7 +6,7 @@ Generic Native SObject Data Loader
 Purpose
 -------
 
-Required a native Apex way to import and export records from any Salesforce object, easily via JSON using only top level record Id's as input and automatically seek out and include related records. Such JSON could be emailed, stored, transmitted to another org easily. With the ability to customise the auto scan of relationships to tweak as needed.
+Required a native Apex way to export and import records from any Salesforce object, easily via JSON using only top level record Id's as input and automatically seek out and include related records. Such JSON could be emailed, stored, transmitted to another org easily. With the ability to customise the auto scan of relationships to tweak as needed.
 
 ![Screenshot](http://andrewfawcett.files.wordpress.com/2012/11/screen-shot-2012-11-19-at-18-38-44.png)
 
