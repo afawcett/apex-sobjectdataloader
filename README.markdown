@@ -10,6 +10,14 @@ Required a native Apex way to import and export records from any Salesforce obje
 
 ![Screenshot](http://andrewfawcett.files.wordpress.com/2012/11/screen-shot-2012-11-19-at-18-38-44.png)
 
+Supporting Use Cases
+--------------------
+
+- **Import/Export.** Provide Import and Export solutions directly a native application without having to use Data Loader.
+- **Generic Super Clone.** Provide a super Clone button that can be applied to any object (without further coding), that not only clones the master record but any related child detail records.
+- **Post Install Setup.** Populate default data / configuration as part of a Package post installation script.
+- **Org 2 Org Data Transfer.** Pass data between orgs, perhaps via an attachment in an email received via an Apex Email Handler that receives an email from Apex code in anthor org?
+
 Example Usage
 ------------- 
 
