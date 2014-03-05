@@ -96,7 +96,7 @@ Feature Summary
 History
 -------
 
-- **March 2014**, Excellent contributions made by [Sonal4J](https://github.com/Sonal4J) to further enhance for self referencing use cases, such as Account object parent child.
+- **March 2014**, Excellent contributions made by [Sonal4J](https://github.com/Sonal4J) to further enhance for self referencing use cases, such as Account object parent child. From Sonal4J *added 'LastViewedDate', 'LastReferencedDate' to the whitelist. It also allows to add user to serialize List containing Id's of different objects . While deserializing Self reference fields relationship is maintained. Test methods are added to test class.*
 - **November 2012**, First developed and released via blog [entry](http://andrewfawcett.wordpress.com/2012/11/19/generic-native-sobject-data-loader)
 
 More Information
