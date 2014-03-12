@@ -400,5 +400,64 @@ private class SObjectDataLoaderTest {
         system.assertEquals(accountRecordsAfterImport,1);
         Integer opportunityRecordsAfterImport = [Select count() from Opportunity where Name like 'TestOpportunity'];
         system.assertEquals(opportunityRecordsAfterImport,1);
-    }   
+    }  
+    
+     /*
+    * Donot save an record subcomponent if error occurs
+    */
+     @isTest(seeAllData=False)
+     private static void processUnorderedRecordsinJsonTest()
+    {
+        String testObjectJson = '{"RecordSetBundles":[{"Records":[{"attributes":{"type":"Contact","url":"/services/data/v29.0/sobjects/Contact/003b000000NStFRAA1"},'+
+        '"IsEmailBounced":false,"CurrencyIsoCode":"USD","HasOptedOutOfFax":false,"LastModifiedDate":"2014-03-01T12:32:28.000+0000","HasOptedOutOfEmail":false,'+
+        '"LastName":"MyContact","Name":"MyContact","DoNotCall":false,"AccountId":"001b000000P8LZgAAN","SystemModstamp":"2014-03-01T12:32:28.000+0000","CreatedDate":"2014-03-01T12:11:58.000+0000",'+
+        '"IsDeleted":false,"Id":"003b000000NStFRAA1"}],"ObjectType":"Contact"},{"Records":[{"attributes":{"type":"Account","url":"/services/data/v29.0/sobjects/Account/001b000000P8LZgAAN"},'+
+        '"Name":"ChildAccount","ParentId":"001b000000PBLqsAAH","CurrencyIsoCode":"USD","SystemModstamp":"2014-03-06T06:04:38.000+0000","CreatedDate":"2014-03-01T11:42:34.000+0000",'+
+        '"LastModifiedDate":"2014-03-06T06:04:38.000+0000","IsDeleted":false,"Id":"001b000000P8LZgAAN"},{"attributes":{"type":"Account","url":"/services/data/v29.0/sobjects/Account/001b000000PBLqsAAH"},'+
+        '"Name":"Parent Account","CurrencyIsoCode":"USD","SystemModstamp":"2014-03-06T06:04:15.000+0000","CreatedDate":"2014-03-06T06:04:15.000+0000","LastModifiedDate":"2014-03-06T06:04:15.000+0000",'+
+        '"IsDeleted":false,"Id":"001b000000PBLqsAAH"}],"ObjectType":"Account"}]}' ;
+        
+        delete [Select Id from Account where Name = 'ChildAccount']; 
+        delete [Select Id from Account where Name = 'Parent Account']; 
+        delete [Select Id from Contact where Name = 'MyContact'];
+
+ 		//Importing Records
+        Set<Id> resultIds = SObjectDataLoader.deserialize(testObjectJson);
+        List<Account> childAccountRecords = [select Id , ParentId from Account where Name like 'ChildAccount'];
+        List<Account> parentAccountRecords = [select Id from Account where Name like 'Parent Account'];
+        List<Contact> contactRecords = [select Id , AccountId from Contact where Name like 'MyContact'];
+        
+        system.assertEquals(childAccountRecords.size(), 1);
+        system.assertEquals(parentAccountRecords.size(), 1);
+        system.assertEquals(contactRecords.size(), 1);
+        system.assertEquals(parentAccountRecords[0].Id, childAccountRecords[0].ParentId);
+        system.assertEquals(childAccountRecords[0].Id,contactRecords[0].AccountId);
+    }
+    
+    @isTest(seeAllData=False)
+     private static void reportLimitExceptions()
+    {
+    	Map<String, Schema.SObjectType> globalDescribeMap = Schema.getGlobalDescribe();
+    	Account accountObj = new Account(Name ='Account1');
+        insert accountObj;
+        List<Account> accList =[select Id from Account];
+		for(Integer i=0;i<100;i++)
+		{
+			Schema.DescribeSObjectResult sObjectDesc = accList[0].Id.getSObjectType().getDescribe();
+			Map<String, Schema.SObjectField> sObjectFields = sObjectDesc.fields.getMap();
+		}
+    	String error ='';
+    	Set<Id> IdToSerialize = new Set<ID>();
+    	IdToSerialize.add(accountObj.Id);
+    	try
+    	{
+    		String serializedData = SObjectDataLoader.serialize(IdToSerialize);
+    	}
+    	catch(Exception e)
+    	{
+    		error = e.getMessage();
+    	}
+    	system.assert(error.contains('Too many fields describes: 101'));
+    }
+    
 }
