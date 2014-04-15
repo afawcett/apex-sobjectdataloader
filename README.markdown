@@ -96,7 +96,8 @@ Feature Summary
 History
 -------
 
-- **March 2014**, Excellent contributions made by [Sonal4J](https://github.com/Sonal4J) to further enhance for self referencing use cases, such as Account object parent child. From Sonal4J *added 'LastViewedDate', 'LastReferencedDate' to the whitelist. It also allows to add user to serialize List containing Id's of different objects . While deserializing Self reference fields relationship is maintained. Test methods are added to test class.*
+- **April 2014**, Further contribution made by [Sonal4J](https://github.com/Sonal4J), to support objects that reference themselves and also use cases where A has a lookup to B, and B has a lookup to A, see pull request [here](https://github.com/afawcett/apex-sobjectdataloader/pull/4).
+- **March 2014**, Excellent contributions made by [Sonal4J](https://github.com/Sonal4J) to further enhance for self referencing use cases, such as Account object parent child. From Sonal4J *added 'LastViewedDate', 'LastReferencedDate' to the whitelist. It also allows to add user to serialize List containing Id's of different objects . While deserializing Self reference fields relationship is maintained. Test methods are added to test class.* (see pull request [here](https://github.com/afawcett/apex-sobjectdataloader/pull/3))
 - **November 2012**, First developed and released via blog [entry](http://andrewfawcett.wordpress.com/2012/11/19/generic-native-sobject-data-loader)
 
 More Information
