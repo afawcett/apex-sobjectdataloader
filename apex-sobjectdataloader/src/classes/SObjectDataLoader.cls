@@ -110,7 +110,15 @@ public with sharing class SObjectDataLoader
 			// Following children? (only set for descendents of the top level object)
 			if(searchChildren)
 			{
-				List<Schema.ChildRelationship> childRelationships = sObjectDescribe.getChildRelationships();
+				List<Schema.ChildRelationship> childRelationships;
+				if(Limits.getLimitChildRelationshipsDescribes() == Limits.getChildRelationshipsDescribes())
+				{
+					throw new LimitsException('Too many child relationships describes: 101');
+				}
+				else
+				{
+					childRelationships = sObjectDescribe.getChildRelationships();
+				}
 				for(Schema.ChildRelationship childRelationship : childRelationships)
 				{
 					// Determine which child relationships to automatically follow
@@ -128,11 +136,19 @@ public with sharing class SObjectDataLoader
 			}
 							
 			// Follow lookup relationships to long as they have not previously been added as child references and are not whitelisted
+			//throw new ConsultingToolException('Error in SobjectDataLoader');
 			Map<String, Schema.SObjectField> sObjectFields = objectFieldDescribeMap.get(sObjectType);
 			if (sObjectFields == null)
 			{
-				sObjectFields = sObjectDescribe.fields.getMap();
-				objectFieldDescribeMap.put(sObjectType, sObjectFields);	
+				if(Limits.getFieldsDescribes()==Limits.getLimitFieldsDescribes())
+				{
+					throw new LimitsException('Too many fields describes: 101');
+				}
+				else
+				{
+					sObjectFields = sObjectDescribe.fields.getMap();
+					objectFieldDescribeMap.put(sObjectType, sObjectFields);	
+				}
 			}
 			
 			//If the Sobject Field is referenceTo as 'User' and 'Organization' then restrict it to search its Relationships 
@@ -293,16 +309,27 @@ public with sharing class SObjectDataLoader
 		
 		// Record set bundles are already ordered in dependency order due to serialisation approach
 		Map<String, Schema.SObjectType> sObjectsByType = Schema.getGlobalDescribe();
+		List<UnresolvedReferences> unresolvedReferencesByRecord = new List<UnresolvedReferences>(); 
 		for(RecordSetBundle recordSetBundle : recordsBundle.recordSetBundles)
 		{
-			//List of IDs To be processed in recordSetBundle
-			List<Id> idsProcessedInRecordSet = new List<Id>();
+			// List of records to be inserted after de-serialization
+            List<Sobject> recordsToInsert = new List<Sobject>();
 			// Determine lookup / relationship fields to update prior to inserting these records
 			Schema.SObjectType sObjectType = sObjectsByType.get(recordSetBundle.ObjectType);
-			Map<String, Schema.SObjectField> sObjectFields = sObjectType.getDescribe().fields.getMap();
+			Map<String, Schema.SObjectField> sObjectFields;
+			if(Limits.getFieldsDescribes()==Limits.getLimitFieldsDescribes())
+			{
+				throw new LimitsException('Too many fields describes: 101');
+			}
+			else
+			{
+			 	sObjectFields = sObjectType.getDescribe().fields.getMap();
+			}
 			List<Schema.SObjectField> relationshipsFields = new List<Schema.SObjectField>();
 			//adding selfrefernce Fields in set 
 			Set<String> selfReferenceFields = new Set<String>();
+			// Unresolved refrences list for callback
+			List<UnresolvedReferences> callbackUnresolvedReferencesList= new List<UnresolvedReferences>(); 
 			for(Schema.SObjectField sObjectField : sObjectFields.values())
 			{
 				if(sObjectField.getDescribe().getType() == Schema.DisplayType.Reference) 
@@ -317,147 +344,148 @@ public with sharing class SObjectDataLoader
 					
 			}
 			// Prepare records for insert
-			List<UnresolvedReferences> unresolvedReferencesByRecord = new List<UnresolvedReferences>(); 
 			for(SObject orignalRecord : recordSetBundle.Records)
 			{
 				// Clone the deserialised SObject to remove the original Id prior to inserting it
 				SObject newRecord = orignalRecord.clone().clone();
 				if(recordsByOriginalId.get(orignalRecord.Id)==null){
 					// Map the new cloned record to its old Id (once inserted this can be used to obtain the new id)
-					recordsByOriginalId.put(orignalRecord.Id, newRecord);
-					// Update foreign key references / lookups / master-detail relationships
-					//Set of containing all Ids to process in a RecordSetBundle
-					idsProcessedInRecordSet.add(orignalRecord.Id);
+                    recordsByOriginalId.put(orignalRecord.Id, newRecord);
+                	if(relationshipsFields.size()>0)
+                	{
+                    	Set<Schema.SObjectField> filteredUnresolvedFieldReferences = new Set<Schema.SObjectField>();
+                    	Set<Schema.SObjectField> allUnresolvedFieldReferences = new Set<Schema.SObjectField>(); 
+                    	updateReferenceFieldsInRecords(relationshipsFields,filteredUnresolvedFieldReferences,recordsByOriginalId,orignalRecord,allUnresolvedFieldReferences);
+                    // Retain a list of records with unresolved references
+                    	if(allUnresolvedFieldReferences.size()>0)
+                    	{
+                        	if(callback!=null)
+                        	{
+                        		UnresolvedReferences unresolvedReferences = new UnresolvedReferences();
+                        		unresolvedReferences.Record = newRecord;
+                        		unresolvedReferences.References = allUnresolvedFieldReferences;
+                        		callbackUnresolvedReferencesList.add(unresolvedReferences);
+                        	}
+                        	else if(filteredUnresolvedFieldReferences.size()>0)
+                        	{
+                        		UnresolvedReferences unresolvedReferences = new UnresolvedReferences();
+                        		unresolvedReferences.Record = orignalRecord;
+                        		unresolvedReferences.References = filteredUnresolvedFieldReferences;
+                        		unresolvedReferencesByRecord.add(unresolvedReferences);
+                        	}
+                    	}
+                    	if(filteredUnresolvedFieldReferences.isEmpty() && callback==null)
+                    	{
+                        	recordsToInsert.add(newRecord);
+                    	}   
+                	}
+                	else
+                	{
+                    	recordsToInsert.add(newRecord);
+                	}
 				}
-				if(relationshipsFields.size()>0)
+            }           
+			List<UnresolvedReferences> newUnResolvedReferenceList = new List<UnresolvedReferences>();
+            // Let the caller attempt to resolve any references the above could not
+            if(callback!=null && callbackUnresolvedReferencesList.size()>0)
+            {
+                callback.unresolvedReferences(sObjectType, callbackUnresolvedReferencesList);
+                for(UnresolvedReferences callBackUnresolvedReference : callbackUnresolvedReferencesList)
+                {
+                		recordsToInsert.add(callBackUnresolvedReference.Record);
+                }
+            }
+           
+            insert recordsToInsert;
+            recordSetBundle.Records = recordsToInsert;
+          	processUnresolvedRecords(unresolvedReferencesByRecord, recordsByOriginalId);
+        }
+        if(unresolvedReferencesByRecord.size() >0)
+        {
+        	List<Sobject> unresolvedRecordsToInsert = new List<Sobject>();
+        	for(UnresolvedReferences unresolvedReference : unresolvedReferencesByRecord)
+        	{
+        		unresolvedRecordsToInsert.add(recordsByOriginalId.get(unresolvedReference.Record.Id));
+        	}
+        	insert unresolvedRecordsToInsert;
+        }
+        // Return Id list from the first bundle set
+        return new Map<Id, SObject>(recordsBundle.recordSetBundles[0].Records).keySet();
+    }
+	
+	/*
+    *  Method to Update foreign key references / lookups / master-detail relationships
+    */
+    private static void updateReferenceFieldsInRecords(List<Schema.SObjectField> relationshipsFields,Set<Schema.SObjectField> filteredUnresolvedFieldReferences,Map<Id, SObject> recordsByOriginalId,Sobject orignalRecord,Set<Schema.SObjectField> allUnresolvedFieldReferences)
+    {
+    	for(Schema.SObjectField sObjectField : relationshipsFields)
+		{                           
+			// Obtained original related record Id and search map over new records by old Ids
+			Id oldRelatedRecordId = (Id) orignalRecord.get(sObjectField);
+			if(oldRelatedRecordId!=null )
+			{
+				SObject newRelatedRecord = recordsByOriginalId.get(oldRelatedRecordId);
+				Sobject newRecord ;
+				if(newRelatedRecord!=null && newRelatedRecord.Id!=null)
 				{
-					Set<Schema.SObjectField> unresolvedFieldReferences = new Set<Schema.SObjectField>(); 
-					for(Schema.SObjectField sObjectField : relationshipsFields)
-					{							
-						// Obtained original related record Id and search map over new records by old Ids
-						Id oldRelatedRecordId = (Id) orignalRecord.get(sObjectField);
-						SObject newRelatedRecord = recordsByOriginalId.get(oldRelatedRecordId);
-						if(newRelatedRecord!=null)
-						{
-							//If Field is selfRefernce then field ID is not updated
-							if(!selfReferenceFields.contains(sObjectField.getDescribe().getName()))
-								newRecord.put(sObjectField, newRelatedRecord.Id);
-						}
-						else
-							unresolvedFieldReferences.add(sObjectField);
-					}
-					// Retain a list of records with unresolved references
-					if(unresolvedFieldReferences.size()>0)
-					{
-						UnresolvedReferences unresolvedReferences = new UnresolvedReferences();
-						unresolvedReferences.Record = newRecord;
-						unresolvedReferences.References = unresolvedFieldReferences;
-						unresolvedReferencesByRecord.add(unresolvedReferences);
-					}	
+					newRecord = recordsByOriginalId.get(orignalRecord.ID);
+					newRecord.put(sObjectField, newRelatedRecord.Id);
 				}
-			}			
-			
-			// Let the caller attempt to resolve any references the above could not
-			if(callback!=null && unresolvedReferencesByRecord.size()>0)
-				callback.unresolvedReferences(sObjectType, unresolvedReferencesByRecord);
-			
-			// Map to insert records by level.Top level is the parent record and level lower to it is child of that parent
-			// Levels are based upon the parent child relationship among the same object type records	
-			Map<Integer,Map<Id,Sobject>>  mapToInsertByLevel = new Map<Integer,Map<Id,Sobject>>();
-			Integer listSize = idsProcessedInRecordSet.size();
-			//Set of ID's already inserted in level map
-			Set<Id>idsInsertedInLevelMap = new Set<Id>();
-			for(Integer i=listSize-1; i>=0; i--)
-			{
-				Id orignalRecordId = idsProcessedInRecordSet.get(i);
-				fetchParentRecordsForChild(orignalRecordId,1,selfReferenceFields,mapToInsertByLevel,recordsByOriginalId,idsInsertedInLevelMap);
-			}
-			//List to contain all records that are inserted 
-			List<Sobject> totalRecordsInserted = new List<Sobject>();
-			
-			//insert the records;Resolve the selfrefernce Relationships	
-			//Highest level records are inserted first
-			for(Integer mapLevel=mapToInsertByLevel.size();mapLevel>0;mapLevel--)
-			{
-				List<Sobject> recordsToInsert = new List<Sobject>();
-				recordsToInsert =  mapToInsertByLevel.get(mapLevel).values();
-				totalRecordsInserted.addAll(recordsToInsert);
-				// Insert cloned deserialised records
-				insert recordsToInsert;
-				//Id of the Parent record are updated in child records
-				if(mapLevel-1>0){
-					List<Sobject> updateSelfRefernceFieldsList = mapToInsertByLevel.get(mapLevel-1).values();
-					for(SObject objectToUpdate : updateSelfRefernceFieldsList)
-					{
-						for(String fieldName : selfReferenceFields)
-						{
-							Id idToProcess = (Id)objectToUpdate.get(fieldName);
-							if(idToProcess!=null && recordsByOriginalId.get(idToProcess)!=null && idsInsertedInLevelMap.contains(idToProcess))
-							{
-								objectToUpdate.put(fieldName,recordsByOriginalId.get(idToProcess).iD);
-							}
-						}
-					}
-				}
-			}
-			recordSetBundle.Records = totalRecordsInserted;
-		}
-		// Return Id list from the first bundle set
-		return new Map<Id, SObject>(recordsBundle.recordSetBundles[0].Records).keySet();
-	}
-
-	/**
-	 * Fetch the parent for the selfrefernce Child Record
-	 **/
-	private static void fetchParentRecordsForChild(ID oldRecordId,Integer level,Set<String>selfReferenceFields,Map<Integer,Map<Id,Sobject>> mapToInsertByLevel ,Map<Id, SObject> recordsByOriginalId,Set<Id> idsInsertedInLevelMap){
-		//If record is already processed.Find the level of record.
-		//If inserted level is less than current level then delete the record from that level
-		//and insert at the current level
-		Boolean insertRecordInMapFlag = true;
-		if(idsInsertedInLevelMap.contains(oldRecordId))
-		{
-			insertRecordInMapFlag = false;
-			Integer mapSize = mapToInsertByLevel.size();
-			Integer recordFoundOnLevel = 0;
-			//if record already exist in map then determine its level
-			for(Integer i=1 ;i <= mapSize;i++)
-			{
-				Set<Id> LevelByIdSet = mapToInsertByLevel.get(i).keySet();
-				if(LevelByIdSet.contains(oldRecordId))
+				else
 				{
-					recordFoundOnLevel =i;
-					break;
+					filteredUnresolvedFieldReferences.add(sObjectField);
 				}
-			}
-			//Delete the record from Map if it is present at lower level than the current level
-			if(recordFoundOnLevel!=0 && recordFoundOnLevel < level)
-			{	
-				mapToInsertByLevel.get(recordFoundOnLevel).remove(oldRecordId);
-				insertRecordInMapFlag = true;
-			}
+ 			}
+ 			else if(allUnresolvedFieldReferences!=null)
+ 			{
+ 				allUnresolvedFieldReferences.add(sObjectField);
+ 			}
 		}
-		if(insertRecordInMapFlag)
-		{	
-			if(mapToInsertByLevel.get(level)!=null){
-				mapToInsertByLevel.get(level).put(oldRecordId,recordsByOriginalId.get(oldRecordId));
-			}
-			else
+			if(allUnresolvedFieldReferences!=null)
 			{
-				mapToInsertByLevel.put(level,new Map<Id,Sobject>{oldRecordId=>recordsByOriginalId.get(oldRecordId)});
+				allUnresolvedFieldReferences.addAll(filteredUnresolvedFieldReferences);
 			}
-		}
-		
+    }
 
-		idsInsertedInLevelMap.add(oldRecordId);
-		for(String fieldName : selfReferenceFields){
-			Id idToProcess = (Id)recordsByOriginalId.get(oldRecordId).get(fieldName);
-			if(idToProcess!=null && recordsByOriginalId.get(idToProcess)!=null)
-			{
-				fetchParentRecordsForChild(idToProcess,level+1,selfReferenceFields,mapToInsertByLevel,recordsByOriginalId,idsInsertedInLevelMap);	
-			}	
-		}
-	}
-			
+ 	/*
+    *  Method to process unresolved references
+    */
+    private static void  processUnresolvedRecords(List<UnresolvedReferences> unresolvedReferencesByRecord,Map<Id, SObject> recordsByOriginalId)
+    {
+    
+   		List<UnresolvedReferences> unresolvedReferences = new List<UnresolvedReferences>(); 
+   		Integer recordsSize = unresolvedReferencesByRecord.size();
+        if(recordsSize >0)
+        {
+            List<Sobject> insertResolvedRecords = new List<Sobject>();
+            for(UnresolvedReferences filteredReference : unresolvedReferencesByRecord)
+            {
+                List <Schema.SObjectField> referenceFields = new List<Schema.SObjectField>(filteredReference.References);
+                Set<Schema.SobjectField> filteredreferenceFields = new Set<Schema.SobjectField>();
+                Sobject oldRecord = filteredReference.Record;
+                SObject unprocessedRecord = recordsByOriginalId.get(oldRecord.Id);
+                updateReferenceFieldsInRecords(referenceFields, filteredreferenceFields, recordsByOriginalId, oldRecord,null);
+                if(filteredreferenceFields.size() >0)
+                {
+                     filteredReference.References = filteredreferenceFields;
+                     unresolvedReferences.add(filteredReference);
+                }
+                else
+                {
+                     insertResolvedRecords.add(unprocessedRecord);
+                }
+            }
+            unresolvedReferencesByRecord.clear();
+            unresolvedReferencesByRecord.addAll(unresolvedReferences);
+
+            if(insertResolvedRecords.size()>0)
+            {
+                insert insertResolvedRecords;
+                processUnresolvedRecords(unresolvedReferencesByRecord,recordsByOriginalId);
+            }       
+        }
+    }
+
 	private static void serialize(Set<ID> ids, Schema.SObjectType sObjectType, Schema.SObjectField queryByIdField, SerializeConfig config, Integer lookupDepth, Integer childDepth, RecordsBundle recordsToBundle)
 	{		
 		// Config?
@@ -476,8 +504,15 @@ public with sharing class SObjectDataLoader
 		Map<String, Schema.SObjectField> sObjectFields = config.objectFieldDescribeMap.get(sObjectType);
 		if (sObjectFields == null)
 		{
-			sObjectFields = sObjectDesc.fields.getMap();
-			config.objectFieldDescribeMap.put(sObjectType, sObjectFields);
+			if(Limits.getFieldsDescribes()==Limits.getLimitFieldsDescribes())
+			{
+				throw new LimitsException('Too many fields describes: 101');
+			}
+			else
+			{
+				sObjectFields = sObjectDesc.fields.getMap();
+				config.objectFieldDescribeMap.put(sObjectType, sObjectFields);
+			}
 		}
 		List<Schema.SObjectField> sObjectFieldsToSerialize = listFieldsToSerialize(sObjectFields, config);
 						
@@ -534,7 +569,15 @@ public with sharing class SObjectDataLoader
 		}
 				
 		// Any child relationships to follow?
-		List<Schema.ChildRelationship> childRelationships = sObjectDesc.getChildRelationships();
+		List<Schema.ChildRelationship> childRelationships;
+		if(Limits.getLimitChildRelationshipsDescribes() == Limits.getChildRelationshipsDescribes())
+		{
+			throw new LimitsException('Too many child relationships describes: 101');
+		}
+		else
+		{
+			childRelationships = sObjectDesc.getChildRelationships();
+		}
 		for(Schema.ChildRelationship childRelationship : childRelationships)
 		{ 
 			// Is this a child relationship we have been asked to follow?
@@ -621,4 +664,7 @@ public with sharing class SObjectDataLoader
 		public List<SObject> Records;	
 	}
 	
+	private class LimitsException extends Exception {
+
+}
 }
