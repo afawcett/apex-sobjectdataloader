@@ -1,7 +1,10 @@
 Generic Native SObject Data Loader
 ==================================
 
-**[Deploy to Salesforce](https://githubsfdeploy.herokuapp.com/app/githubdeploy/afawcett/apex-sobjectdataloader)**
+<a href="https://githubsfdeploy.herokuapp.com?owner=afawcett&repo=apex-sobjectdataloader">
+  <img alt="Deploy to Salesforce"
+       src="https://raw.githubusercontent.com/afawcett/githubsfdeploy/master/src/main/webapp/resources/img/deploy.png">
+</a>
 
 Purpose
 -------
