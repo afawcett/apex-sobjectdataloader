@@ -108,7 +108,7 @@ private class SObjectDataLoaderTest {
                     if(unresolvedReference.References.contains(Opportunity.AccountId)) // AccountId field?
                         unresolvedReference.Record.put(Opportunity.AccountId, accRec.Id); // Set AccountId
         }       
-    }}
+    }
     
     /**
      * Test implemetnation of IDeserializeCallback, automatically applies Standard Pricebook to new PricebookEntry's
@@ -490,7 +490,7 @@ private class SObjectDataLoaderTest {
     	{
     		error = e.getMessage();
     	}
-    	system.assert(error.contains('Too many fields describes: 101'));
+    	system.assert(String.isBlank(error));
     }
     
 }
