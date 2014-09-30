@@ -312,7 +312,7 @@ public with sharing class SObjectDataLoader
 			// Determine lookup / relationship fields to update prior to inserting these records
 			Schema.SObjectType sObjectType = sObjectsByType.get(recordSetBundle.ObjectType);
 			Map<String, Schema.SObjectField> sObjectFields;
-			sObjectFields = sObjectType.getDescribe().fields.getMap();}
+			sObjectFields = sObjectType.getDescribe().fields.getMap();
 			List<Schema.SObjectField> relationshipsFields = new List<Schema.SObjectField>();
 			//adding selfrefernce Fields in set 
 			Set<String> selfReferenceFields = new Set<String>();
