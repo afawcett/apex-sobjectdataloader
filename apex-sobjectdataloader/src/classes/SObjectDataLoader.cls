@@ -111,14 +111,7 @@ public with sharing class SObjectDataLoader
 			if(searchChildren)
 			{
 				List<Schema.ChildRelationship> childRelationships;
-				if(Limits.getLimitChildRelationshipsDescribes() == Limits.getChildRelationshipsDescribes())
-				{
-					throw new LimitsException('Too many child relationships describes: 101');
-				}
-				else
-				{
 					childRelationships = sObjectDescribe.getChildRelationships();
-				}
 				for(Schema.ChildRelationship childRelationship : childRelationships)
 				{
 					// Determine which child relationships to automatically follow
@@ -140,15 +133,8 @@ public with sharing class SObjectDataLoader
 			Map<String, Schema.SObjectField> sObjectFields = objectFieldDescribeMap.get(sObjectType);
 			if (sObjectFields == null)
 			{
-				if(Limits.getFieldsDescribes()==Limits.getLimitFieldsDescribes())
-				{
-					throw new LimitsException('Too many fields describes: 101');
-				}
-				else
-				{
-					sObjectFields = sObjectDescribe.fields.getMap();
-					objectFieldDescribeMap.put(sObjectType, sObjectFields);	
-				}
+				sObjectFields = sObjectDescribe.fields.getMap();
+				objectFieldDescribeMap.put(sObjectType, sObjectFields);
 			}
 			
 			//If the Sobject Field is referenceTo as 'User' and 'Organization' then restrict it to search its Relationships 
@@ -161,8 +147,11 @@ public with sharing class SObjectDataLoader
 							omitRefernceToFields = true;
 					}
 					if(!followChildRelationships.contains(sObjectField) && !relationshipWhitelist.contains(sObjectField.getDescribe().getName()) && !omitRefernceToFields)
-						follow(sObjectField).
-							searchRelationships(sObjectField.getDescribe().getReferenceTo()[0], lookupDepth+1, childDepth, false, searched);
+					{
+						if(sObjectField.getDescribe().getReferenceTo()!=null && sObjectField.getDescribe().getReferenceTo().size()>0)
+							follow(sObjectField).
+								searchRelationships(sObjectField.getDescribe().getReferenceTo()[0], lookupDepth+1, childDepth, false, searched);
+					}
 				}
                 else if (fieldWhitelist.contains(sObjectField.getDescribe().getName()))
                     omit(sObjectField);
@@ -207,7 +196,13 @@ public with sharing class SObjectDataLoader
             new Set<String>
                 {
                 	'LastViewedDate',
-                	'LastReferencedDate'
+                	'LastReferencedDate',
+			//below fields are compound fields
+                	'MailingAddress',
+                	'OtherAddress',
+                	'BillingAddress',
+                	'ShippingAddress',
+                	'Address'
                 };
 				
 	}
@@ -317,14 +312,7 @@ public with sharing class SObjectDataLoader
 			// Determine lookup / relationship fields to update prior to inserting these records
 			Schema.SObjectType sObjectType = sObjectsByType.get(recordSetBundle.ObjectType);
 			Map<String, Schema.SObjectField> sObjectFields;
-			if(Limits.getFieldsDescribes()==Limits.getLimitFieldsDescribes())
-			{
-				throw new LimitsException('Too many fields describes: 101');
-			}
-			else
-			{
-			 	sObjectFields = sObjectType.getDescribe().fields.getMap();
-			}
+			sObjectFields = sObjectType.getDescribe().fields.getMap();
 			List<Schema.SObjectField> relationshipsFields = new List<Schema.SObjectField>();
 			//adding selfrefernce Fields in set 
 			Set<String> selfReferenceFields = new Set<String>();
@@ -504,15 +492,8 @@ public with sharing class SObjectDataLoader
 		Map<String, Schema.SObjectField> sObjectFields = config.objectFieldDescribeMap.get(sObjectType);
 		if (sObjectFields == null)
 		{
-			if(Limits.getFieldsDescribes()==Limits.getLimitFieldsDescribes())
-			{
-				throw new LimitsException('Too many fields describes: 101');
-			}
-			else
-			{
-				sObjectFields = sObjectDesc.fields.getMap();
-				config.objectFieldDescribeMap.put(sObjectType, sObjectFields);
-			}
+			sObjectFields = sObjectDesc.fields.getMap();
+			config.objectFieldDescribeMap.put(sObjectType, sObjectFields);
 		}
 		List<Schema.SObjectField> sObjectFieldsToSerialize = listFieldsToSerialize(sObjectFields, config);
 						
@@ -570,14 +551,7 @@ public with sharing class SObjectDataLoader
 				
 		// Any child relationships to follow?
 		List<Schema.ChildRelationship> childRelationships;
-		if(Limits.getLimitChildRelationshipsDescribes() == Limits.getChildRelationshipsDescribes())
-		{
-			throw new LimitsException('Too many child relationships describes: 101');
-		}
-		else
-		{
-			childRelationships = sObjectDesc.getChildRelationships();
-		}
+		childRelationships = sObjectDesc.getChildRelationships();
 		for(Schema.ChildRelationship childRelationship : childRelationships)
 		{ 
 			// Is this a child relationship we have been asked to follow?
@@ -664,7 +638,4 @@ public with sharing class SObjectDataLoader
 		public List<SObject> Records;	
 	}
 	
-	private class LimitsException extends Exception {
-
-}
 }

@@ -55,26 +55,59 @@ private class SObjectDataLoaderTest {
         assertResults(resultIds);
     }
     
-    @IsTest(seeAllData=true) // http://stackoverflow.com/questions/9164986/how-do-i-avoid-standard-price-not-defined-when-unit-testing-an-opportunitylineit
+    @IsTest(seeAllData=false) 
     public static void testAutoConfigured()
     {
         // Save point to rollback test data
         System.Savepoint savePoint = Database.setSavepoint();
-        
+        Account testAcc = new Account(Name = 'TestAccount');
+        insert testAcc;
+        Opportunity opp = new Opportunity();
+	opp.Name = 'TestOpp' ;
+	opp.StageName = 'Open';
+	opp.CloseDate = System.today();
+	opp.AccountId = testAcc.Id;
+        insert opp;
         // Serialise test data into JSON record set bundle via auto configuraiton (with some manual tweaks)
-        String serializedData = SObjectDataLoader.serialize(createOpportunities(),
+        String serializedData = SObjectDataLoader.serialize(new Set<Id>{opp.Id},
             new SObjectDataLoader.SerializeConfig().
                 auto(Opportunity.sObjectType).          // Automatically determine child and related object references needed (calls follow methods)
-                omit(OpportunityLineItem.UnitPrice).    // Do not serialize the UnitPrice, as TotalPrice is enough and both cannot exist together
-                omit(PricebookEntry.Pricebook2Id).      // Do not serialize any Pricebook references (these will be reassoicated apone deserialization)
-                omit(Opportunity.Pricebook2Id));        // Do not serialize any Pricebook references (these will be reassoicated apone deserialization)
+                omit(Opportunity.AccountID));       
 
         // Rollback test data
         Database.rollback(savePoint);
         
         // Recreate test data via deserialize
-        Set<ID> resultIds = SObjectDataLoader.deserialize(serializedData, new ApplyStandardPricebook());
-        assertResults(resultIds);               
+        Set<ID> resultIds = SObjectDataLoader.deserialize(serializedData, new ApplyAccountRecord());
+        List<Account> accList = [select Id, Name from Account];
+        System.assertEquals(1,accList.size());
+        System.assertEquals(accList[0].Name,'TestAccount1');
+        List<Opportunity> oppList = [select Id, Name, AccountId from Opportunity];
+        System.assertEquals(1,oppList.size());
+        System.assertEquals(oppList[0].Name,'TestOpp');
+        System.assertEquals(oppList[0].AccountId,accList[0].Id);
+    }
+    
+    /**
+     * Test implemetnation of IDeserializeCallback, automatically applies AccountId to new Opportunity
+     **/
+    private class ApplyAccountRecord implements SObjectDataLoader.IDeserializeCallback
+    {
+        private Account accRec;
+        
+        public ApplyAccountRecord()
+        {
+            accRec = new Account(Name = 'TestAccount1');
+            insert accRec;
+        }
+        
+        public void unresolvedReferences(Schema.SObjectType sObjectType, List<SObjectDataLoader.UnresolvedReferences> unresolvedReferences)
+        {
+            if(sObjectType == Opportunity.sObjectType) // Opportunity object?
+                for(SObjectDataLoader.UnresolvedReferences unresolvedReference : unresolvedReferences)
+                    if(unresolvedReference.References.contains(Opportunity.AccountId)) // AccountId field?
+                        unresolvedReference.Record.put(Opportunity.AccountId, accRec.Id); // Set AccountId
+        }       
     }
     
     /**
@@ -457,7 +490,7 @@ private class SObjectDataLoaderTest {
     	{
     		error = e.getMessage();
     	}
-    	system.assert(error.contains('Too many fields describes: 101'));
+    	system.assert(String.isBlank(error));
     }
     
 }
