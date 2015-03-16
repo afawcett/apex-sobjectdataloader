@@ -104,7 +104,8 @@ public with sharing class SObjectDataLoader
 			// Stop infinite recursion	
 			if(searched.contains(sObjectType) || lookupDepth > 2 || childDepth > 3) // TODO: Make max depth configurable
 				return;
-			searched.add(sObjectType);
+			//searched.add(sObjectType);
+			if (searchChildren) searched.add(sObjectType);
 			Schema.DescribeSObjectResult sObjectDescribe = sObjectType.getDescribe();
 						
 			// Following children? (only set for descendents of the top level object)
@@ -182,7 +183,8 @@ public with sharing class SObjectDataLoader
 				  'NotesAndAttachments', 
 				  'OpenActivities', 
 				  'Histories', 
-				  'Feeds'};		
+				  'Feeds',
+				  'RecordAssociatedGroups'};		
 	
 		// Standard RefernceTo that are not included when using the auto config	
 		private Set<String> referenceToWhitelist = 
