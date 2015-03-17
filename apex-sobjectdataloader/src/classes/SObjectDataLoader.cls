@@ -92,19 +92,26 @@ public with sharing class SObjectDataLoader
 			followChildRelationships = new Set<Schema.SObjectField>();
 			omitFields = new Set<Schema.SObjectField>();
 			Set<Schema.SObjectType> searched = new Set<Schema.SObjectType>();
-			searchRelationships(sObjectType, 0, 0, true, searched);	
+			Set<Schema.SObjectType> searchedParentOnly = new Set<Schema.SObjectType>(); // This is a set of objecttypes where only parent links have been searched
+			searchRelationships(sObjectType, 0, 0, true, searched, searchedParentOnly);	
 			return this;	
 		}
 		
 		/**
 		 * Seek out recursively relationships
 		 **/
-		private void searchRelationships(Schema.SObjectType sObjectType, Integer lookupDepth, Integer childDepth, Boolean searchChildren, Set<Schema.SObjectType> searched)
+		private void searchRelationships(Schema.SObjectType sObjectType, Integer lookupDepth, Integer childDepth, Boolean searchChildren, Set<Schema.SObjectType> searched, Set<Schema.SObjectType> searchedParentOnly)
 		{		
-			// Stop infinite recursion	
-			if(searched.contains(sObjectType) || lookupDepth > 2 || childDepth > 3) // TODO: Make max depth configurable
+			// Stop infinite recursion and checks that an object shuold not be searched twice, unless the scope of the search is different	
+			if(searched.contains(sObjectType) || (searchChildren == false && searchedParentOnly.contains(sObjectType)) || lookupDepth > 2 || childDepth > 3) // TODO: Make max depth configurable
 				return;
-			searched.add(sObjectType);
+
+			// Store this object type so that it is not searched again
+			if (searchChildren) {
+				searched.add(sObjectType);
+			} else {
+				searchedParentOnly.add(sObjectType);
+			}
 			Schema.DescribeSObjectResult sObjectDescribe = sObjectType.getDescribe();
 						
 			// Following children? (only set for descendents of the top level object)
@@ -124,7 +131,7 @@ public with sharing class SObjectDataLoader
 					if(!childRelationship.isCascadeDelete()) // Skip relationships for none owned records (aka only follow master-detail relationships)
 						continue;
 					followChild(childRelationship.getField()).
-						searchRelationships(childRelationship.getChildSObject(), lookupDepth, childDepth+1, true, searched);
+						searchRelationships(childRelationship.getChildSObject(), lookupDepth, childDepth+1, true, searched, searchedParentOnly);
 				}
 			}
 							
@@ -150,7 +157,7 @@ public with sharing class SObjectDataLoader
 					{
 						if(sObjectField.getDescribe().getReferenceTo()!=null && sObjectField.getDescribe().getReferenceTo().size()>0)
 							follow(sObjectField).
-								searchRelationships(sObjectField.getDescribe().getReferenceTo()[0], lookupDepth+1, childDepth, false, searched);
+								searchRelationships(sObjectField.getDescribe().getReferenceTo()[0], lookupDepth+1, childDepth, false, searched, searchedParentOnly);
 					}
 				}
                 else if (fieldWhitelist.contains(sObjectField.getDescribe().getName()))
