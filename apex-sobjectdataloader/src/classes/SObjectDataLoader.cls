@@ -104,8 +104,7 @@ public with sharing class SObjectDataLoader
 			// Stop infinite recursion	
 			if(searched.contains(sObjectType) || lookupDepth > 2 || childDepth > 3) // TODO: Make max depth configurable
 				return;
-			//searched.add(sObjectType);
-			if (searchChildren) searched.add(sObjectType);
+			searched.add(sObjectType);
 			Schema.DescribeSObjectResult sObjectDescribe = sObjectType.getDescribe();
 						
 			// Following children? (only set for descendents of the top level object)
