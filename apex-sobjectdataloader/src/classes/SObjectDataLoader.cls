@@ -40,13 +40,22 @@ public with sharing class SObjectDataLoader
 		protected Set<Schema.SObjectField> followRelationships;
 		protected Set<Schema.SObjectField> followChildRelationships;
 		protected Set<Schema.SObjectField> omitFields;
-        protected Map<Schema.SObjectType, Map<String, Schema.SObjectField>> objectFieldDescribeMap;
+		protected Map<String,List<String>> userFieldBlackListMap;
+		protected Map<String,List<String>> userChildRelationshipBlackListMap;
+		protected Set<String> blacklistedNamespacePrefix;
+		protected Boolean omitCurrencyField;
+		protected Map<Schema.SObjectType, Map<String, Schema.SObjectField>> objectFieldDescribeMap;
+		
 		
 		public SerializeConfig()
 		{	
 			followRelationships = new Set<Schema.SObjectField>();
 			followChildRelationships = new Set<Schema.SObjectField>();
-			omitFields = new Set<Schema.SObjectField>(); 			
+			omitFields = new Set<Schema.SObjectField>(); 	
+			userFieldBlackListMap = new Map<String,List<String>>();	
+			userChildRelationshipBlackListMap = new Map<String,List<String>>();		
+			blacklistedNamespacePrefix = new Set<String>();
+			omitCurrencyField =false;
 			objectFieldDescribeMap = new Map<Schema.SObjectType, Map<String, Schema.SObjectField>>();
 		}
 		
@@ -97,6 +106,44 @@ public with sharing class SObjectDataLoader
 		}
 		
 		/**
+		 * Provide a map that represents the object field relationship the serializer should whitelist
+		 **/
+		public SerializeConfig addToUserChildRelationShipBlackList(Map<String,List<String>> childRelationShipBlackListMap)
+		{
+			userChildRelationshipBlackListMap.putAll(childRelationShipBlackListMap);
+			return this;
+		}
+		
+		/**
+		 * Provide a map that represents the object child relationship the serializer should whitelist
+		 **/
+		public SerializeConfig addToUserFieldBlackList(Map<String,List<String>> fieldBlackListMap)
+		{
+			userFieldBlackListMap.putAll(fieldBlackListMap);
+			return this;
+		}
+		
+		public SerializeConfig addToBlacklistedNamespace(Set<String> NamespaceList)
+		{
+			blacklistedNamespacePrefix.addAll(NamespaceList);
+			return this;
+		}
+		
+		/**
+		 * Method adds blacklist Fields common for all Objects to fieldWhitelist 
+		**/
+		public SerializeConfig omitCommonFields(Set<String> fieldnames)
+		{
+			if(fieldnames!=null && fieldnames.size()>0)
+			{
+				fieldWhitelist.addAll(fieldnames);
+				if(fieldnames.contains('CurrencyIsoCode'))
+					omitCurrencyField = true;
+			}
+			return this;
+		}
+		
+		/**
 		 * Seek out recursively relationships
 		 **/
 		private void searchRelationships(Schema.SObjectType sObjectType, Integer lookupDepth, Integer childDepth, Boolean searchChildren, Set<Schema.SObjectType> searched)
@@ -106,18 +153,22 @@ public with sharing class SObjectDataLoader
 				return;
 			searched.add(sObjectType);
 			Schema.DescribeSObjectResult sObjectDescribe = sObjectType.getDescribe();
-						
+			String sObjectName = sObjectType.getDescribe().getName();
 			// Following children? (only set for descendents of the top level object)
 			if(searchChildren)
 			{
-				List<Schema.ChildRelationship> childRelationships;
-					childRelationships = sObjectDescribe.getChildRelationships();
+				List<Schema.ChildRelationship> childRelationships = sObjectDescribe.getChildRelationships();
+				Set<String> userChildRelationshipBlackListSet = new Set<String>();		
+				if(userChildRelationshipBlackListMap.get(sObjectName)!= null && userChildRelationshipBlackListMap.get(sObjectName).size()>0)
+				{
+					userChildRelationshipBlackListSet.addAll(userChildRelationshipBlackListMap.get(sObjectName));
+				}
 				for(Schema.ChildRelationship childRelationship : childRelationships)
 				{
 					// Determine which child relationships to automatically follow
 					String childRelationshipName = childRelationship.getRelationshipName();
 					if(childRelationshipName==null || 
-					   childRelationshipWhitelist.contains(childRelationshipName)) // Skip relationships without names and those whitelisted
+					   childRelationshipWhitelist.contains(childRelationshipName) || userChildRelationshipBlackListSet.contains(childRelationshipName) || matchNameSpaceForObject(childRelationshipName)) // Skip relationships without names and those whitelisted
 						continue;
 					if(childRelationshipName.endsWith('Histories')) // Skip relationships ending in Histories (TODO: consider a RegEx approach?)
 						continue;
@@ -127,9 +178,6 @@ public with sharing class SObjectDataLoader
 						searchRelationships(childRelationship.getChildSObject(), lookupDepth, childDepth+1, true, searched);
 				}
 			}
-							
-			// Follow lookup relationships to long as they have not previously been added as child references and are not whitelisted
-			//throw new ConsultingToolException('Error in SobjectDataLoader');
 			Map<String, Schema.SObjectField> sObjectFields = objectFieldDescribeMap.get(sObjectType);
 			if (sObjectFields == null)
 			{
@@ -137,7 +185,14 @@ public with sharing class SObjectDataLoader
 				objectFieldDescribeMap.put(sObjectType, sObjectFields);
 			}
 			
+			Set<String> userBlackListSet = new Set<String>();
+			if(userFieldBlackListMap.get(sObjectName)!= null && userFieldBlackListMap.get(sObjectName).size()>0)
+			{
+				userBlackListSet.addAll(userFieldBlackListMap.get(sObjectName));
+			}			
+			// Follow lookup relationships to long as they have not previously been added as child references and are not whitelisted
 			//If the Sobject Field is referenceTo as 'User' and 'Organization' then restrict it to search its Relationships 
+
 			for(Schema.SObjectField sObjectField : sObjectFields.values())
 				if(sObjectField.getDescribe().getType() == Schema.DisplayType.Reference)
 				{
@@ -146,17 +201,31 @@ public with sharing class SObjectDataLoader
 						if(referenceToWhitelist.contains(refernceToType.getDescribe().getName()))
 							omitRefernceToFields = true;
 					}
-					if(!followChildRelationships.contains(sObjectField) && !relationshipWhitelist.contains(sObjectField.getDescribe().getName()) && !omitRefernceToFields)
-					{
-						if(sObjectField.getDescribe().getReferenceTo()!=null && sObjectField.getDescribe().getReferenceTo().size()>0)
-							follow(sObjectField).
-								searchRelationships(sObjectField.getDescribe().getReferenceTo()[0], lookupDepth+1, childDepth, false, searched);
-					}
+					if(!followChildRelationships.contains(sObjectField) && !relationshipWhitelist.contains(sObjectField.getDescribe().getName()) && !omitRefernceToFields && !userBlackListSet.contains(sObjectField.getDescribe().getName()) && !matchNameSpaceForObject(sObjectField.getDescribe().getName()))
+						follow(sObjectField).
+							searchRelationships(sObjectField.getDescribe().getReferenceTo()[0], lookupDepth+1, childDepth, false, searched);
 				}
-                else if (fieldWhitelist.contains(sObjectField.getDescribe().getName()))
+				else if(userBlackListSet.contains(sObjectField.getDescribe().getName()) || matchNameSpaceForObject(sObjectField.getDescribe().getName()))
+				{
+                	omit(sObjectField);
+				}
+                else if(fieldWhitelist.contains(sObjectField.getDescribe().getName()))
+                {
                     omit(sObjectField);
+                } 
 		}
 
+		private Boolean matchNameSpaceForObject(String ObjectName)
+		{
+			Boolean namespaceMatched = false;
+			for(String namespaceExcluded : blacklistedNamespacePrefix)
+			{
+				namespaceExcluded = namespaceExcluded.trim()+'__';
+				if(ObjectName.startsWith(namespaceExcluded))
+					namespaceMatched = true;
+			}
+			return namespaceMatched;
+		} 
 		// Standard fields that are not included when using the auto config
 		private Set<String> relationshipWhitelist = 
 			new Set<String>
@@ -182,7 +251,13 @@ public with sharing class SObjectDataLoader
 				  'NotesAndAttachments', 
 				  'OpenActivities', 
 				  'Histories', 
-				  'Feeds'};		
+				  'Feeds',
+				  'CombinedAttachments',
+                  'ContentDocuments',
+                  'ContentVersions',
+                  'AttachedContentDocuments',
+                  'RecordAssociatedGroups'
+				  };		
 	
 		// Standard RefernceTo that are not included when using the auto config	
 		private Set<String> referenceToWhitelist = 
@@ -197,7 +272,7 @@ public with sharing class SObjectDataLoader
                 {
                 	'LastViewedDate',
                 	'LastReferencedDate',
-			//below fields are compound fields
+                	//below fields are compound fields
                 	'MailingAddress',
                 	'OtherAddress',
                 	'BillingAddress',
@@ -272,11 +347,12 @@ public with sharing class SObjectDataLoader
 				recordMapToSerialize.put(sObjectType,idSet);
 			}
 		}
-		
+		Map<String,Set<Id>> processedIds = new Map<String,Set<Id>>();
+		Map<Id, SObject> recordsSerialized = new Map<Id, Sobject>();
 		Set<Schema.SObjectType> sObjectTypeSet = recordMapToSerialize.keySet();
 		for(Schema.SObjectType sobjectTypes : sObjectTypeSet)
 		{
-			serialize(recordMapToSerialize.get(sobjectTypes), sobjectTypes, null, strategyBySObjectType.get(sobjectTypes), 0, 0, recordsToBundle);
+			serialize(recordMapToSerialize.get(sobjectTypes), sobjectTypes, null, strategyBySObjectType.get(sobjectTypes), 0, 0, recordsToBundle, processedIds, recordsSerialized);
 		}		
 		// Serialise the records bundle container		
 		return JSON.serialize(recordsToBundle);		 		
@@ -474,7 +550,7 @@ public with sharing class SObjectDataLoader
         }
     }
 
-	private static void serialize(Set<ID> ids, Schema.SObjectType sObjectType, Schema.SObjectField queryByIdField, SerializeConfig config, Integer lookupDepth, Integer childDepth, RecordsBundle recordsToBundle)
+	private static void serialize(Set<ID> ids, Schema.SObjectType sObjectType, Schema.SObjectField queryByIdField, SerializeConfig config, Integer lookupDepth, Integer childDepth, RecordsBundle recordsToBundle, Map<String,Set<ID>> processedIds, Map<Id,SObject> recordsSerialized)
 	{		
 		// Config?
 		if(config==null)
@@ -485,10 +561,9 @@ public with sharing class SObjectDataLoader
 			
 		// Describe object and determine fields to serialize
 		Schema.DescribeSObjectResult sObjectDesc = sObjectType.getDescribe();
-		
+
 		//updating so that the we dont query for objects that cannot be queried:-
 		if(!sObjectDesc.queryable || !sObjectDesc.isCreateable()) return;
-		
 		Map<String, Schema.SObjectField> sObjectFields = config.objectFieldDescribeMap.get(sObjectType);
 		if (sObjectFields == null)
 		{
@@ -499,11 +574,51 @@ public with sharing class SObjectDataLoader
 						
 		// Query records to serialize
 		String fieldList = null;
-		for(Schema.SObjectField sObjectField : sObjectFieldsToSerialize)
-			fieldList = fieldList == null ? sObjectField.getDescribe().getName() : fieldList + ',' + sObjectField.getDescribe().getName();
-		String query = String.format('select {0} from {1} where {2} in :ids order by {2}', 
-			new List<String> { fieldList, sObjectDesc.getName(), queryByIdField == null ? 'id' : queryByIdField.getDescribe().getName(), 'Name' });
-		Map<Id, SObject> recordsToSerializeById = new Map<Id, SObject>(Database.query(query));
+		Map<Id, SObject> recordsToSerializeById;
+		Boolean queryRecord = true;
+		Set <Id> processedIdSet;
+		if(queryByIdField == null)
+		{
+			if(processedIds.get(sObjectDesc.getName())==null)
+			{
+				processedIds.put(sObjectDesc.getName(),ids);
+			}
+			else
+			{
+				processedIdSet = processedIds.get(sObjectDesc.getName());
+				if(processedIdSet.containsAll(ids))
+				{
+					queryRecord = false;
+				}
+				else
+				{
+					processedIdSet.addAll(ids);
+					processedIds.put(sObjectDesc.getName(),processedIdSet);
+				}
+			}
+		}
+		if(queryRecord)
+		{
+			List<String> updatableObjectfields = new List<String>();
+			for(Schema.SObjectField sObjectField : sObjectFieldsToSerialize)
+			{
+				if(sObjectField.getDescribe().isUpdateable())
+				{
+					updatableObjectfields.add(sObjectField.getDescribe().getName());
+				}
+				fieldList = fieldList == null ? sObjectField.getDescribe().getName() : fieldList + ',' + sObjectField.getDescribe().getName();
+			}
+			String query = String.format('select {0} from {1} where {2} in :ids order by {2}', 
+				new List<String> { fieldList, sObjectDesc.getName(), queryByIdField == null ? 'id' : queryByIdField.getDescribe().getName(), 'Name' });
+			recordsToSerializeById = new Map<Id, SObject>(Database.query(query));
+			recordsSerialized.putAll(recordsToSerializeById);
+		}
+		else
+		{
+			recordsToSerializeById = new Map<Id, SObject>();
+			for(Id idToProcess : ids)
+				recordsToSerializeById.put(idToProcess,recordsSerialized.get(idToProcess));
+		}
 		if(recordsToSerializeById.size()==0)
 			return;
 		
@@ -530,7 +645,7 @@ public with sharing class SObjectDataLoader
 			{
 				Set<Id> relatedRecordIds = relationshipsByField.get(relationshipField);
 				if(relatedRecordIds.size()>0)
-					serialize(relatedRecordIds, relationshipField.getReferenceTo()[0], null, config, lookupDepth+1, childDepth, recordsToBundle);					
+					serialize(relatedRecordIds, relationshipField.getReferenceTo()[0], null, config, lookupDepth+1, childDepth, recordsToBundle, processedIds, recordsSerialized);					
 			}
 		}
 					
@@ -550,14 +665,13 @@ public with sharing class SObjectDataLoader
 		}
 				
 		// Any child relationships to follow?
-		List<Schema.ChildRelationship> childRelationships;
-		childRelationships = sObjectDesc.getChildRelationships();
+		List<Schema.ChildRelationship> childRelationships = sObjectDesc.getChildRelationships();
 		for(Schema.ChildRelationship childRelationship : childRelationships)
 		{ 
 			// Is this a child relationship we have been asked to follow?
 			Schema.SObjectType childSObjectType = childRelationship.getChildSObject();
 			if(config.followChildRelationships.contains(childRelationship.getField()))
-				serialize(recordsToSerializeById.keySet(), childSObjectType, childRelationship.getField(), config, lookupDepth, childDepth+1, recordsToBundle);
+				serialize(recordsToSerializeById.keySet(), childSObjectType, childRelationship.getField(), config, lookupDepth, childDepth+1, recordsToBundle,  processedIds, recordsSerialized);
 		}
 	}
 	
@@ -587,6 +701,26 @@ public with sharing class SObjectDataLoader
 			serializeFields.add(sObjectField);
 		}			
 		return serializeFields;	
+	}
+	
+	/*
+	* Method to create a Map from json file
+	*/
+	public static Map<String,List<Sobject>> deserializedRecords(String recordsBundleAsJSON)
+	{
+		Map<String,List<Sobject>> recordBundleMap = new Map<String,List<Sobject>>();
+		RecordsBundle recordsBundle = (RecordsBundle) 
+			JSON.deserialize(recordsBundleAsJSON, SObjectDataLoader.RecordsBundle.class);
+		for(RecordSetBundle recordSetBundle : recordsBundle.recordSetBundles)
+		{
+			List<Sobject> recordList = new List<Sobject>();
+			if(recordBundleMap.get(recordSetBundle.ObjectType)!= null)
+				recordList.addAll(recordBundleMap.get(recordSetBundle.ObjectType));
+			else
+				recordList.addAll(recordSetBundle.Records);
+			recordBundleMap.put(recordSetBundle.ObjectType, recordList);
+		}
+		return recordBundleMap;	
 	}
 	
 	/** 
@@ -637,5 +771,4 @@ public with sharing class SObjectDataLoader
 		public String ObjectType;
 		public List<SObject> Records;	
 	}
-	
 }

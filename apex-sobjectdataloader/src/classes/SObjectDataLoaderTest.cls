@@ -468,7 +468,7 @@ private class SObjectDataLoaderTest {
     }
     
     @isTest(seeAllData=False)
-     private static void reportLimitExceptions()
+    private static void reportLimitExceptions()
     {
     	Map<String, Schema.SObjectType> globalDescribeMap = Schema.getGlobalDescribe();
     	Account accountObj = new Account(Name ='Account1');
@@ -491,6 +491,273 @@ private class SObjectDataLoaderTest {
     		error = e.getMessage();
     	}
     	system.assert(String.isBlank(error));
+	}
+    
+    @isTest(seeAllData=False)
+    private static void userFieldWhiteListTest()
+    {
+		Id idToSerialize;
+    	Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig> strategyBySObjectType = new Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig>();
+	 	Map<String,List<String>> fieldWhiteListMap = new Map<String,List<String>>();
+	 	fieldWhiteListMap.put('Account',new List<String>{'Site'});
+	 	Map<String, Schema.SObjectType> globalDescribeMap = Schema.getGlobalDescribe();
+    	Schema.SObjectType accSObjectType = globalDescribeMap.get('Account');
+		SObject acc = accSObjectType.newSObject();
+		acc.put('Name', 'testAccount');
+		acc.put('Site', 'testSite');
+        insert acc;
+    	
+    	idToSerialize = acc.Id;
+    	Schema.SObjectType conSObjectType = globalDescribeMap.get('Contact');
+		SObject con = conSObjectType.newSObject();
+		con.put('LastName','testContact');
+		con.put('CurrencyIsoCode','USD');
+		con.put('AccountId',acc.Id);
+		insert con;
+		
+		Schema.SObjectType sObjectType = acc.Id.getSObjectType();
+		if(strategyBySObjectType.get(sObjectType)==null)
+		{
+			SObjectDataLoader.SerializeConfig config = new SObjectDataLoader.SerializeConfig().addToUserFieldBlackList(fieldWhiteListMap);
+			strategyBySObjectType.put(sObjectType,config.auto(idToSerialize.getSObjectType()));
+		}
+		String jsonString = SObjectDataLoader.serialize(new Set<Id>{idToSerialize}, strategyBySObjectType);
+		system.assert(!jsonString.contains('testSite'),jsonString);
+		system.assert(jsonString.contains('Contact'),jsonString);
+	}
+    
+    @isTest(seeAllData=False)
+	private static void userChildWhiteListTest()
+    {
+		Id idToSerialize;
+    	Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig> strategyBySObjectType = new Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig>();
+	 	Map<String,List<String>> childRelationshipWhiteListMap = new Map<String,List<String>>();
+	 	childRelationshipWhiteListMap.put('Account',new List<String>{'Contacts'});
+	 	Map<String, Schema.SObjectType> globalDescribeMap = Schema.getGlobalDescribe();
+    	Schema.SObjectType accSObjectType = globalDescribeMap.get('Account');
+		SObject acc = accSObjectType.newSObject();
+		acc.put('Name', 'testAccount');
+		acc.put('Site', 'testSite');
+        insert acc;
+    	
+    	idToSerialize = acc.Id;
+    	Schema.SObjectType conSObjectType = globalDescribeMap.get('Contact');
+		SObject con = conSObjectType.newSObject();
+		con.put('LastName','testContact');
+		con.put('CurrencyIsoCode','USD');
+		con.put('AccountId',acc.Id);
+		insert con;
+		
+		Schema.SObjectType sObjectType = acc.Id.getSObjectType();
+		if(strategyBySObjectType.get(sObjectType)==null)
+		{
+			SObjectDataLoader.SerializeConfig config = new SObjectDataLoader.SerializeConfig().addToUserChildRelationShipBlackList(childRelationshipWhiteListMap);
+			strategyBySObjectType.put(sObjectType,config.auto(idToSerialize.getSObjectType()));
+		}
+		String jsonString = SObjectDataLoader.serialize(new Set<Id>{idToSerialize}, strategyBySObjectType);
+		system.assert(jsonString.contains('testSite'),jsonString);
+		system.assert(!jsonString.contains('Contact'),jsonString);
     }
     
+    @isTest(seeAllData=False)
+	private static void userFieldWhiteListTestWithPackageBlaclist()
+    {
+		Id idToSerialize;
+    	Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig> strategyBySObjectType = new Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig>();
+	 	Map<String,List<String>> fieldWhiteListMap = new Map<String,List<String>>();
+	 	fieldWhiteListMap.put('Account',new List<String>{'Site'});
+	 	Map<String, Schema.SObjectType> globalDescribeMap = Schema.getGlobalDescribe();
+    	Schema.SObjectType accSObjectType = globalDescribeMap.get('Account');
+		SObject acc = accSObjectType.newSObject();
+		acc.put('Name', 'testAccount');
+		acc.put('Site', 'testSite');
+        insert acc;
+    	
+    	idToSerialize = acc.Id;
+    	Schema.SObjectType conSObjectType = globalDescribeMap.get('Contact');
+		SObject con = conSObjectType.newSObject();
+		con.put('LastName','testContact');
+		con.put('CurrencyIsoCode','USD');
+		con.put('AccountId',acc.Id);
+		insert con;
+		
+		Set<String> packageNamespaceSet = new Set<String>{'abcd','pqrs'};
+		Schema.SObjectType sObjectType = acc.Id.getSObjectType();
+		if(strategyBySObjectType.get(sObjectType)==null)
+		{
+			SObjectDataLoader.SerializeConfig config = new SObjectDataLoader.SerializeConfig().addToBlacklistedNamespace(packageNamespaceSet).addToUserFieldBlackList(fieldWhiteListMap);
+			strategyBySObjectType.put(sObjectType,config.auto(idToSerialize.getSObjectType()));
+		}
+		String jsonString = SObjectDataLoader.serialize(new Set<Id>{idToSerialize}, strategyBySObjectType);
+		system.assert(!jsonString.contains('testSite'),jsonString);
+		system.assert(jsonString.contains('Contact'),jsonString);
+	}
+	
+	@isTest(seeAllData=False)
+    private static void userChildWhiteListTestWithPackageBlaclist()
+    {
+		Id idToSerialize;
+    	Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig> strategyBySObjectType = new Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig>();
+	 	Map<String,List<String>> childRelationshipWhiteListMap = new Map<String,List<String>>();
+	 	childRelationshipWhiteListMap.put('Account',new List<String>{'Contacts'});
+	 	Map<String, Schema.SObjectType> globalDescribeMap = Schema.getGlobalDescribe();
+    	Schema.SObjectType accSObjectType = globalDescribeMap.get('Account');
+		SObject acc = accSObjectType.newSObject();
+		acc.put('Name', 'testAccount');
+		acc.put('Site', 'testSite');
+        insert acc;
+    	
+    	idToSerialize = acc.Id;
+    	Schema.SObjectType conSObjectType = globalDescribeMap.get('Contact');
+		SObject con = conSObjectType.newSObject();
+		con.put('LastName','testContact');
+		con.put('CurrencyIsoCode','USD');
+		con.put('AccountId',acc.Id);
+		insert con;
+		
+		Set<String> packageNamespaceSet = new Set<String>{'abcd','pqrs'};
+		Schema.SObjectType sObjectType = acc.Id.getSObjectType();
+		if(strategyBySObjectType.get(sObjectType)==null)
+		{
+			SObjectDataLoader.SerializeConfig config = new SObjectDataLoader.SerializeConfig().addToBlacklistedNamespace(packageNamespaceSet).addToUserChildRelationShipBlackList(childRelationshipWhiteListMap);
+			strategyBySObjectType.put(sObjectType,config.auto(idToSerialize.getSObjectType()));
+		}
+		String jsonString = SObjectDataLoader.serialize(new Set<Id>{idToSerialize}, strategyBySObjectType);
+		system.assert(jsonString.contains('testSite'),jsonString);
+		system.assert(!jsonString.contains('Contact'),jsonString);
+	}
+
+	/*
+	* Test  omitting  fields common to all objects
+	*/
+    
+	@isTest(seeAllData=False)
+    private static void testOmitCommonFields()
+    {
+		Id idToSerialize;
+    	Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig> strategyBySObjectType = new Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig>();
+	 	Map<String,List<String>> childRelationshipWhiteListMap = new Map<String,List<String>>();
+	 	Map<String, Schema.SObjectType> globalDescribeMap = Schema.getGlobalDescribe();
+    	Schema.SObjectType accSObjectType = globalDescribeMap.get('Account');
+		SObject acc = accSObjectType.newSObject();
+		acc.put('Name', 'testAccount');
+		acc.put('Site', 'testSite');
+        insert acc;
+		if(UserInfo.IsMultiCurrencyOrganization())
+		{
+			String serializedRecord = SObjectDataLoader.serialize(new Set<Id>{acc.Id}, new SObjectDataLoader.SerializeConfig().omitCommonFields(new Set<String>{'CurrencyIsoCode'}).auto(acc.Id.getSObjectType()));
+			System.assert(!serializedRecord.contains('CurrencyIsoCode'));
+		}
+		else
+		{
+			String serializedRecord = SObjectDataLoader.serialize(new Set<Id>{acc.Id}, new SObjectDataLoader.SerializeConfig().auto(acc.Id.getSObjectType()));
+			System.assert(!serializedRecord.contains('CurrencyIsoCode'));
+		}
+    }
+    
+    /*
+	* Test  omitting  fields compound for Account Object
+	*/
+	@isTest(seeAllData=False)
+	private static void testOmitCompoundFieldsForAccount()
+    {
+		Id idToSerialize;
+    	Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig> strategyBySObjectType = new Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig>();
+	 	Map<String,List<String>> childRelationshipWhiteListMap = new Map<String,List<String>>();
+	 	Map<String, Schema.SObjectType> globalDescribeMap = Schema.getGlobalDescribe();
+    	Schema.SObjectType accSObjectType = globalDescribeMap.get('Account');
+		SObject acc = accSObjectType.newSObject();
+		acc.put('Name', 'testAccount');
+		acc.put('Site', 'testSite');
+		acc.put('BillingCity', 'abcCity');
+		acc.put('BillingCountry', 'abcCountry');
+		acc.put('BillingState', 'abcState');
+		acc.put('ShippingCity', 'defCity');
+		acc.put('ShippingCountry', 'defCountry');
+        insert acc;
+		String serializedRecord = SObjectDataLoader.serialize(new Set<Id>{acc.Id}, new SObjectDataLoader.SerializeConfig().auto(acc.Id.getSObjectType()));
+		Set<Id> accIdSet = SObjectDataLoader.deserialize(serializedRecord);
+		System.assertEquals(1, accIdSet.size());
+		List<Account> accList = [select Name, BillingCity, BillingCountry, BillingState, BillingStreet, ShippingCity, ShippingCountry from Account where Id in :accIdSet];
+		System.assertEquals(1,accList.size());
+		System.assertEquals('abcCity',accList[0].BillingCity);
+		System.assertEquals('defCountry',accList[0].ShippingCountry);
+    }
+    
+    /*
+	* Test  omitting  fields compound for Contact Object
+	*/
+	@isTest(seeAllData=False)
+	private static void testOmitCompoundFieldsForContact()
+    {
+		Id idToSerialize;
+    	Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig> strategyBySObjectType = new Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig>();
+	 	Map<String,List<String>> childRelationshipWhiteListMap = new Map<String,List<String>>();
+	 	Map<String, Schema.SObjectType> globalDescribeMap = Schema.getGlobalDescribe();
+    	Schema.SObjectType conSObjectType = globalDescribeMap.get('Contact');
+		SObject con = conSObjectType.newSObject();
+		con.put('LastName','testContact');
+		con.put('MailingState', 'abcState');
+		con.put('MailingCountry', 'abcCountry');
+		con.put('MailingPostalCode', '123456');
+		con.put('MailingStreet', 'abcStreet');
+		con.put('MailingCity', 'abcCity');
+		con.put('OtherCity', 'defCity');
+		con.put('OtherCountry', 'defCountry');
+		con.put('OtherPostalCode', '234561');
+		con.put('OtherState', 'defState');
+        insert con;
+		String serializedRecord = SObjectDataLoader.serialize(new Set<Id>{con.Id}, new SObjectDataLoader.SerializeConfig().auto(con.Id.getSObjectType()));
+		Set<Id> conIdSet = SObjectDataLoader.deserialize(serializedRecord);
+		System.assertEquals(1, conIdSet.size());
+		List<Contact> conList = [select LastName, MailingState, MailingCountry, MailingPostalCode, MailingStreet, MailingCity, OtherCity, OtherCountry, OtherPostalCode, OtherState from Contact where Id in :conIdSet];
+		System.assertEquals(1,conList.size());
+		System.assertEquals('abcState',conList[0].MailingState);
+		System.assertEquals('defCountry',conList[0].OtherCountry);
+    }
+    
+     /*
+	* Test  omitting  fields compound for Lead Object
+	*/
+	@isTest(seeAllData=False)
+	private static void testOmitCompoundFieldsForLead()
+    {
+		Id idToSerialize;
+    	Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig> strategyBySObjectType = new Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig>();
+	 	Map<String,List<String>> childRelationshipWhiteListMap = new Map<String,List<String>>();
+	 	Map<String, Schema.SObjectType> globalDescribeMap = Schema.getGlobalDescribe();
+    	Schema.SObjectType leadSObjectType = globalDescribeMap.get('Lead');
+		SObject testLead = leadSObjectType.newSObject();
+		testLead.put('FirstName','test');
+		testLead.put('LastName', 'Lead');
+		testLead.put('Company', 'abc');
+		testLead.put('LeadSource', 'lsrc');
+		testLead.put('Street', 'abcStreet');
+		testLead.put('City', 'abcCity');
+		testLead.put('Country', 'abcCountry');
+		testLead.put('State', 'abcState');
+		testLead.put('PostalCode', '123456');
+        insert testLead;
+		String serializedRecord = SObjectDataLoader.serialize(new Set<Id>{testLead.Id}, new SObjectDataLoader.SerializeConfig().auto(testLead.Id.getSObjectType()));
+		Set<Id> leadIdSet = SObjectDataLoader.deserialize(serializedRecord);
+		System.assertEquals(1, leadIdSet.size());
+		List<Lead> leadList = [select LastName, FirstName, Company, LeadSource, Street, City, Country, State, PostalCode from Lead where Id in :leadIdSet];
+		System.assertEquals(1,leadList.size());
+		System.assertEquals('abcState',leadList[0].State);
+		System.assertEquals('abcCountry',leadList[0].Country);
+    }
+    
+     /*
+	* Test  creating a map from json file  
+	*/
+	@isTest(seeAllData=False)
+	private static void testdeserializedRecords()
+    {
+		String accountRecordJsonFile ='{"RecordSetBundles":[{"Records":[{"attributes":{"type":"Account","url":"/services/data/v31.0/sobjects/Account/001b000000dPPN3AAO"},"Name":"TestAccount","SystemModstamp":"2014-09-29T05:06:08.000+0000","CreatedDate":"2014-09-29T05:06:08.000+0000","LastModifiedDate":"2014-09-29T05:06:08.000+0000","IsDeleted":false,"Id":"001b000000dPPN3AAO"}],"ObjectType":"Account"}]}';
+		Map<String,List<Sobject>> recordBundleMap = new Map<String,List<Sobject>>();
+		recordBundleMap = SObjectDataLoader.deserializedRecords(accountRecordJsonFile);
+		System.assert(recordBundleMap.keyset().contains('Account'));
+		List<Account> accList = (List<Account>)recordBundleMap.get('Account');
+		System.assertEquals(accList[0].Name,'TestAccount');
+    }
 }
