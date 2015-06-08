@@ -170,7 +170,6 @@ public with sharing class SObjectDataLoader
 				{ 'OwnerId',
 				  'CreatedById',
 				  'LastModifiedById',
-				  'RecordTypeId',
 				  'ProfileId'
 				};
 				
@@ -286,6 +285,10 @@ public with sharing class SObjectDataLoader
 		{
 			serialize(recordMapToSerialize.get(sobjectTypes), sobjectTypes, null, strategyBySObjectType.get(sobjectTypes), 0, 0, recordsToBundle, new Set<Id>());
 		}		
+
+		// Add in a map of record types
+		recordsToBundle.setRecordTypeMap();
+
 		// Serialise the records bundle container		
 		return JSON.serialize(recordsToBundle);		 		
 	}
@@ -307,6 +310,25 @@ public with sharing class SObjectDataLoader
 		RecordsBundle recordsBundle = (RecordsBundle) 
 			JSON.deserialize(recordsBundleAsJSON, SObjectDataLoader.RecordsBundle.class);
 		
+		// Get current record types that are in the bundle and see if they exist in the current database
+		Map<String, RecordType> currentRecordTypeMap = new Map<String, RecordType>();
+		for (RecordType rt : [SELECT Id, Description, DeveloperName, Name, SobjectType FROM RecordType]) {
+			currentRecordTypeMap.put(rt.SObjectType + '.' + rt.DeveloperName, rt);
+		} 
+
+		// Create a map from imported record type IDs to new ones
+		Map<Id, Id> recordTypeIdMap = new Map<Id, Id>();
+		if (recordsBundle.recordTypeMap != null) {
+			for (RecordType rt : recordsBundle.recordTypeMap.values()) {
+				// Get the current record type that matches the imported one
+				RecordType currentRecordType = currentRecordTypeMap.get(rt.SObjectType + '.' + rt.DeveloperName);
+			
+				// Add this to the map
+				recordTypeIdMap.put(rt.Id, currentRecordType.Id);
+			
+			}
+		} 
+
 		// Map to track original ID's against the new SObject record instances being inserted
 		Map<Id, SObject> recordsByOriginalId = new Map<Id, SObject>();
 		
@@ -328,30 +350,44 @@ public with sharing class SObjectDataLoader
 			List<UnresolvedReferences> callbackUnresolvedReferencesList= new List<UnresolvedReferences>(); 
 			for(Schema.SObjectField sObjectField : sObjectFields.values())
 			{
-				if(sObjectField.getDescribe().getType() == Schema.DisplayType.Reference) 
+				if(sObjectField.getDescribe().getType() == Schema.DisplayType.Reference && !sObjectField.getDescribe().getName().equalsIgnoreCase('RecordTypeId')) {
 					relationshipsFields.add(sObjectField);					
-					for(Schema.sObjectType refernceToType : sObjectField.getDescribe().getReferenceTo())
-					{					
-					 	if(refernceToType.getDescribe().getName().equals(sObjectType.getDescribe().getName()))
-					 	{
-					 		selfReferenceFields.add(sObjectField.getDescribe().getName());
-					 	}
-					}
+				}
+					
+				for(Schema.sObjectType referenceToType : sObjectField.getDescribe().getReferenceTo())
+				{					
+				 	if(referenceToType.getDescribe().getName().equals(sObjectType.getDescribe().getName()))
+				 	{
+				 		selfReferenceFields.add(sObjectField.getDescribe().getName());
+				 	}
+				}
 					
 			}
 			// Prepare records for insert
-			for(SObject orignalRecord : recordSetBundle.Records)
+			for(SObject originalRecord : recordSetBundle.Records)
 			{
+				// Update the record type ID if this object supports record types
+				if (sObjectFields.containsKey('recordtypeid')) {
+					if (originalRecord.get('RecordTypeId') != null) {
+						// Get the new record type Id 
+						id newRecordTypeId = recordTypeIdMap.get((Id)originalRecord.get('RecordTypeId'));	
+						
+						// Update the record with the new Id
+						originalRecord.put('RecordTypeId', newRecordTypeId);	
+							
+					}
+				}
+
 				// Clone the deserialised SObject to remove the original Id prior to inserting it
-				SObject newRecord = orignalRecord.clone().clone();
-				if(recordsByOriginalId.get(orignalRecord.Id)==null){
+				SObject newRecord = originalRecord.clone().clone();
+				if(recordsByOriginalId.get(originalRecord.Id)==null){
 					// Map the new cloned record to its old Id (once inserted this can be used to obtain the new id)
-                    recordsByOriginalId.put(orignalRecord.Id, newRecord);
+                    recordsByOriginalId.put(originalRecord.Id, newRecord);
                 	if(relationshipsFields.size()>0)
                 	{
                     	Set<Schema.SObjectField> filteredUnresolvedFieldReferences = new Set<Schema.SObjectField>();
                     	Set<Schema.SObjectField> allUnresolvedFieldReferences = new Set<Schema.SObjectField>(); 
-                    	updateReferenceFieldsInRecords(relationshipsFields,filteredUnresolvedFieldReferences,recordsByOriginalId,orignalRecord,allUnresolvedFieldReferences);
+                    	updateReferenceFieldsInRecords(relationshipsFields,filteredUnresolvedFieldReferences,recordsByOriginalId,originalRecord,allUnresolvedFieldReferences);
                     // Retain a list of records with unresolved references
                     	if(allUnresolvedFieldReferences.size()>0)
                     	{
@@ -365,7 +401,7 @@ public with sharing class SObjectDataLoader
                         	else if(filteredUnresolvedFieldReferences.size()>0)
                         	{
                         		UnresolvedReferences unresolvedReferences = new UnresolvedReferences();
-                        		unresolvedReferences.Record = orignalRecord;
+                        		unresolvedReferences.Record = originalRecord;
                         		unresolvedReferences.References = filteredUnresolvedFieldReferences;
                         		unresolvedReferencesByRecord.add(unresolvedReferences);
                         	}
@@ -651,6 +687,40 @@ public with sharing class SObjectDataLoader
 		public List<RecordSetBundle> RecordSetBundles;			
 		// Used by serialiser to group records by type during recursion
 		public transient Map<String, RecordSetBundle> RecordSetBundlesByType;
+
+		// Record type map by Ids
+		public Map<Id, RecordType> recordTypeMap;
+		
+		/**
+		 * @description Create a map of the current record types for all of the included records
+		 **/ 
+		public void setRecordTypeMap() {
+	
+			// Describe object and determine fields to serialize
+			Map<String,Schema.SObjectType> globalDesc = Schema.getGlobalDescribe();
+			
+			// Build up a set of record type IDs
+			Set<Id> recordTypeIds = new Set<Id>();
+			for (RecordSetBundle bundle : RecordSetBundles) {
+				// Get a map of fields
+				SObjectType accountType = globalDesc.get(bundle.ObjectType);
+				Map<String,Schema.SObjectField> mfields = accountType.getDescribe().fields.getMap();				
+				
+				// If this object contains a record type then step through and get the IDs
+				if (mfields.containsKey('recordtypeid')) {
+					for (SObject obj : bundle.Records) {
+						if (obj.get('RecordTypeId') != null) {
+							recordTypeIds.add((id)obj.get('RecordTypeId'));
+						}
+					}					
+				}
+
+			}
+			
+			// Get all of the record types that are included
+			recordTypeMap = new Map<Id, RecordType>([SELECT Id, Description, DeveloperName, Name, SobjectType FROM RecordType WHERE Id=:recordTypeIds]);
+						
+		} 		
 	}
 	
 	/**
