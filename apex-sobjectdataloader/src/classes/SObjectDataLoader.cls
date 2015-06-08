@@ -92,19 +92,26 @@ public with sharing class SObjectDataLoader
 			followChildRelationships = new Set<Schema.SObjectField>();
 			omitFields = new Set<Schema.SObjectField>();
 			Set<Schema.SObjectType> searched = new Set<Schema.SObjectType>();
-			searchRelationships(sObjectType, 0, 0, true, searched);	
+			Set<Schema.SObjectType> searchedParentOnly = new Set<Schema.SObjectType>(); // This is a set of objecttypes where only parent links have been searched
+			searchRelationships(sObjectType, 0, 0, true, searched, searchedParentOnly);	
 			return this;	
 		}
 		
 		/**
 		 * Seek out recursively relationships
 		 **/
-		private void searchRelationships(Schema.SObjectType sObjectType, Integer lookupDepth, Integer childDepth, Boolean searchChildren, Set<Schema.SObjectType> searched)
+		private void searchRelationships(Schema.SObjectType sObjectType, Integer lookupDepth, Integer childDepth, Boolean searchChildren, Set<Schema.SObjectType> searched, Set<Schema.SObjectType> searchedParentOnly)
 		{		
-			// Stop infinite recursion	
-			if(searched.contains(sObjectType) || lookupDepth > 2 || childDepth > 3) // TODO: Make max depth configurable
+			// Stop infinite recursion and checks that an object shuold not be searched twice, unless the scope of the search is different	
+			if(searched.contains(sObjectType) || (searchChildren == false && searchedParentOnly.contains(sObjectType)) || lookupDepth > 2 || childDepth > 3) // TODO: Make max depth configurable
 				return;
-			searched.add(sObjectType);
+
+			// Store this object type so that it is not searched again
+			if (searchChildren) {
+				searched.add(sObjectType);
+			} else {
+				searchedParentOnly.add(sObjectType);
+			}
 			Schema.DescribeSObjectResult sObjectDescribe = sObjectType.getDescribe();
 						
 			// Following children? (only set for descendents of the top level object)
@@ -124,7 +131,7 @@ public with sharing class SObjectDataLoader
 					if(!childRelationship.isCascadeDelete()) // Skip relationships for none owned records (aka only follow master-detail relationships)
 						continue;
 					followChild(childRelationship.getField()).
-						searchRelationships(childRelationship.getChildSObject(), lookupDepth, childDepth+1, true, searched);
+						searchRelationships(childRelationship.getChildSObject(), lookupDepth, childDepth+1, true, searched, searchedParentOnly);
 				}
 			}
 							
@@ -150,7 +157,7 @@ public with sharing class SObjectDataLoader
 					{
 						if(sObjectField.getDescribe().getReferenceTo()!=null && sObjectField.getDescribe().getReferenceTo().size()>0)
 							follow(sObjectField).
-								searchRelationships(sObjectField.getDescribe().getReferenceTo()[0], lookupDepth+1, childDepth, false, searched);
+								searchRelationships(sObjectField.getDescribe().getReferenceTo()[0], lookupDepth+1, childDepth, false, searched, searchedParentOnly);
 					}
 				}
                 else if (fieldWhitelist.contains(sObjectField.getDescribe().getName()))
@@ -182,7 +189,8 @@ public with sharing class SObjectDataLoader
 				  'NotesAndAttachments', 
 				  'OpenActivities', 
 				  'Histories', 
-				  'Feeds'};		
+				  'Feeds',
+				  'RecordAssociatedGroups'};		
 	
 		// Standard RefernceTo that are not included when using the auto config	
 		private Set<String> referenceToWhitelist = 
@@ -276,7 +284,7 @@ public with sharing class SObjectDataLoader
 		Set<Schema.SObjectType> sObjectTypeSet = recordMapToSerialize.keySet();
 		for(Schema.SObjectType sobjectTypes : sObjectTypeSet)
 		{
-			serialize(recordMapToSerialize.get(sobjectTypes), sobjectTypes, null, strategyBySObjectType.get(sobjectTypes), 0, 0, recordsToBundle);
+			serialize(recordMapToSerialize.get(sobjectTypes), sobjectTypes, null, strategyBySObjectType.get(sobjectTypes), 0, 0, recordsToBundle, new Set<Id>());
 		}		
 		// Serialise the records bundle container		
 		return JSON.serialize(recordsToBundle);		 		
@@ -474,7 +482,17 @@ public with sharing class SObjectDataLoader
         }
     }
 
-	private static void serialize(Set<ID> ids, Schema.SObjectType sObjectType, Schema.SObjectField queryByIdField, SerializeConfig config, Integer lookupDepth, Integer childDepth, RecordsBundle recordsToBundle)
+    /**
+     * @description This serialises a set of record and related records from a given set of IDs
+     * @param Set<Id> The set of IDs of the main records that should be serialized
+     * @param Schema.SObjectType The sObject type that is being serialised
+     * @param SerializeConfig Configuration object that controls which relationships etc should be processed
+     * @param Integer The current lookup depth. This is incremented for each recurssion that looks at lookup links and is used to prevent infinate loops
+     * @param Integer The current child depth. This is incremented for each recurssion that looks at related child records links and is used to prevent infinate loops
+     * @param RecordsBundle The bundle of records that is being added to
+     * @param Set<Id> A set of record IDs that have already been serialised
+     **/
+	private static void serialize(Set<ID> ids, Schema.SObjectType sObjectType, Schema.SObjectField queryByIdField, SerializeConfig config, Integer lookupDepth, Integer childDepth, RecordsBundle recordsToBundle, Set<Id> processedIds)
 	{		
 		// Config?
 		if(config==null)
@@ -486,6 +504,13 @@ public with sharing class SObjectDataLoader
 		// Describe object and determine fields to serialize
 		Schema.DescribeSObjectResult sObjectDesc = sObjectType.getDescribe();
 		
+		// Check that these records have not already been processed
+		if (queryByIdField == null) {
+			ids.removeAll(processedIds);
+		}
+		processedIds.addAll(ids);
+		if (ids.size() == 0) return;		
+
 		//updating so that the we dont query for objects that cannot be queried:-
 		if(!sObjectDesc.queryable || !sObjectDesc.isCreateable()) return;
 		
@@ -530,7 +555,7 @@ public with sharing class SObjectDataLoader
 			{
 				Set<Id> relatedRecordIds = relationshipsByField.get(relationshipField);
 				if(relatedRecordIds.size()>0)
-					serialize(relatedRecordIds, relationshipField.getReferenceTo()[0], null, config, lookupDepth+1, childDepth, recordsToBundle);					
+					serialize(relatedRecordIds, relationshipField.getReferenceTo()[0], null, config, lookupDepth+1, childDepth, recordsToBundle, processedIds);					
 			}
 		}
 					
@@ -557,7 +582,7 @@ public with sharing class SObjectDataLoader
 			// Is this a child relationship we have been asked to follow?
 			Schema.SObjectType childSObjectType = childRelationship.getChildSObject();
 			if(config.followChildRelationships.contains(childRelationship.getField()))
-				serialize(recordsToSerializeById.keySet(), childSObjectType, childRelationship.getField(), config, lookupDepth, childDepth+1, recordsToBundle);
+				serialize(recordsToSerializeById.keySet(), childSObjectType, childRelationship.getField(), config, lookupDepth, childDepth+1, recordsToBundle, processedIds);
 		}
 	}
 	
