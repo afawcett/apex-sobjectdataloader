@@ -40,8 +40,8 @@ public with sharing class SObjectDataLoader
 		protected Set<Schema.SObjectField> followRelationships;
 		protected Set<Schema.SObjectField> followChildRelationships;
 		protected Set<Schema.SObjectField> omitFields;
-		protected Map<String,List<String>> userFieldBlackListMap;
-		protected Map<String,List<String>> userChildRelationshipBlackListMap;
+		protected Map<String,List<String>> userFieldWhiteListMap;
+		protected Map<String,List<String>> userChildRelationshipWhiteListMap;
 		protected Set<String> blacklistedNamespacePrefix;
 		protected Boolean omitCurrencyField;
 		protected Map<Schema.SObjectType, Map<String, Schema.SObjectField>> objectFieldDescribeMap;
@@ -52,8 +52,8 @@ public with sharing class SObjectDataLoader
 			followRelationships = new Set<Schema.SObjectField>();
 			followChildRelationships = new Set<Schema.SObjectField>();
 			omitFields = new Set<Schema.SObjectField>(); 	
-			userFieldBlackListMap = new Map<String,List<String>>();	
-			userChildRelationshipBlackListMap = new Map<String,List<String>>();		
+			userFieldWhiteListMap = new Map<String,List<String>>();	
+			userChildRelationshipWhiteListMap = new Map<String,List<String>>();		
 			blacklistedNamespacePrefix = new Set<String>();
 			omitCurrencyField =false;
 			objectFieldDescribeMap = new Map<Schema.SObjectType, Map<String, Schema.SObjectField>>();
@@ -109,18 +109,18 @@ public with sharing class SObjectDataLoader
 		/**
 		 * Provide a map that represents the object field relationship the serializer should whitelist
 		 **/
-		public SerializeConfig addToUserChildRelationShipBlackList(Map<String,List<String>> childRelationShipBlackListMap)
+		public SerializeConfig addToUserChildRelationShipWhiteList(Map<String,List<String>> childRelationShipWhiteListMap)
 		{
-			userChildRelationshipBlackListMap.putAll(childRelationShipBlackListMap);
+			UserChildRelationshipWhiteListMap.putAll(childRelationShipWhiteListMap);
 			return this;
 		}
 		
 		/**
 		 * Provide a map that represents the object child relationship the serializer should whitelist
 		 **/
-		public SerializeConfig addToUserFieldBlackList(Map<String,List<String>> fieldBlackListMap)
+		public SerializeConfig addToUserFieldWhiteList(Map<String,List<String>> FieldWhiteListMap)
 		{
-			userFieldBlackListMap.putAll(fieldBlackListMap);
+			userFieldWhiteListMap.putAll(FieldWhiteListMap);
 			return this;
 		}
 		
@@ -165,17 +165,17 @@ public with sharing class SObjectDataLoader
 			if(searchChildren)
 			{
 				List<Schema.ChildRelationship> childRelationships = sObjectDescribe.getChildRelationships();
-				Set<String> userChildRelationshipBlackListSet = new Set<String>();		
-				if(userChildRelationshipBlackListMap.get(sObjectName)!= null && userChildRelationshipBlackListMap.get(sObjectName).size()>0)
+				Set<String> userChildRelationshipWhiteListSet = new Set<String>();		
+				if(userChildRelationshipWhiteListMap.get(sObjectName)!= null && userChildRelationshipWhiteListMap.get(sObjectName).size()>0)
 				{
-					userChildRelationshipBlackListSet.addAll(userChildRelationshipBlackListMap.get(sObjectName));
+					userChildRelationshipWhiteListSet.addAll(userChildRelationshipWhiteListMap.get(sObjectName));
 				}
 				for(Schema.ChildRelationship childRelationship : childRelationships)
 				{
 					// Determine which child relationships to automatically follow
 					String childRelationshipName = childRelationship.getRelationshipName();
 					if(childRelationshipName==null || 
-					   childRelationshipWhitelist.contains(childRelationshipName) || userChildRelationshipBlackListSet.contains(childRelationshipName) || matchNameSpaceForObject(childRelationshipName)) // Skip relationships without names and those whitelisted
+					   childRelationshipWhitelist.contains(childRelationshipName) || userChildRelationshipWhiteListSet.contains(childRelationshipName) || matchNameSpaceForObject(childRelationshipName)) // Skip relationships without names and those whitelisted
 						continue;
 					if(childRelationshipName.endsWith('Histories')) // Skip relationships ending in Histories (TODO: consider a RegEx approach?)
 						continue;
@@ -192,10 +192,10 @@ public with sharing class SObjectDataLoader
 				objectFieldDescribeMap.put(sObjectType, sObjectFields);
 			}
 			
-			Set<String> userBlackListSet = new Set<String>();
-			if(userFieldBlackListMap.get(sObjectName)!= null && userFieldBlackListMap.get(sObjectName).size()>0)
+			Set<String> userWhiteListSet = new Set<String>();
+			if(userFieldWhiteListMap.get(sObjectName)!= null && userFieldWhiteListMap.get(sObjectName).size()>0)
 			{
-				userBlackListSet.addAll(userFieldBlackListMap.get(sObjectName));
+				userWhiteListSet.addAll(userFieldWhiteListMap.get(sObjectName));
 			}			
 			// Follow lookup relationships to long as they have not previously been added as child references and are not whitelisted
 			//If the Sobject Field is referenceTo as 'User' and 'Organization' then restrict it to search its Relationships 
@@ -208,14 +208,14 @@ public with sharing class SObjectDataLoader
 						if(referenceToWhitelist.contains(refernceToType.getDescribe().getName()))
 							omitRefernceToFields = true;
 					}
-					if(!followChildRelationships.contains(sObjectField) && !relationshipWhitelist.contains(sObjectField.getDescribe().getName()) && !omitRefernceToFields && !userBlackListSet.contains(sObjectField.getDescribe().getName()) && !matchNameSpaceForObject(sObjectField.getDescribe().getName()))
+					if(!followChildRelationships.contains(sObjectField) && !relationshipWhitelist.contains(sObjectField.getDescribe().getName()) && !omitRefernceToFields && !userWhiteListSet.contains(sObjectField.getDescribe().getName()) && !matchNameSpaceForObject(sObjectField.getDescribe().getName()))
 					{
 						if(sObjectField.getDescribe().getReferenceTo()!=null && sObjectField.getDescribe().getReferenceTo().size()>0)
 							follow(sObjectField).
 								searchRelationships(sObjectField.getDescribe().getReferenceTo()[0], lookupDepth+1, childDepth, false, searched, searchedParentOnly);
 					}
 				}
-				else if(userBlackListSet.contains(sObjectField.getDescribe().getName()) || matchNameSpaceForObject(sObjectField.getDescribe().getName()))
+				else if(userWhiteListSet.contains(sObjectField.getDescribe().getName()) || matchNameSpaceForObject(sObjectField.getDescribe().getName()))
 				{
                 	omit(sObjectField);
 				}
