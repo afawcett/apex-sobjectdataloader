@@ -38,6 +38,7 @@ public with sharing class SObjectDataLoader
 	public class SerializeConfig
 	{
 		protected Set<Schema.SObjectField> followRelationships;
+		protected Set<Schema.SObjectField> keepRelationshipValues;
 		protected Set<Schema.SObjectField> followChildRelationships;
 		protected Set<Schema.SObjectField> omitFields;
 		protected Map<String,List<String>> userFieldWhiteListMap;
@@ -50,6 +51,7 @@ public with sharing class SObjectDataLoader
 		public SerializeConfig()
 		{	
 			followRelationships = new Set<Schema.SObjectField>();
+			keepRelationshipValues = new Set<Schema.SObjectField>(); 
 			followChildRelationships = new Set<Schema.SObjectField>();
 			omitFields = new Set<Schema.SObjectField>(); 	
 			userFieldWhiteListMap = new Map<String,List<String>>();	
@@ -65,6 +67,15 @@ public with sharing class SObjectDataLoader
 		public SerializeConfig follow(Schema.SObjectField relationshipField)
 		{
 			followRelationships.add(relationshipField);
+			return this;
+		}
+		
+		/**
+		 * Keep relationship Id value without following (=serializing) the related object
+		 **/
+		public SerializeConfig keepValue(Schema.SObjectField relationshipField)
+		{
+			keepRelationshipValues.add(relationshipField);
 			return this;
 		}
 		
@@ -85,6 +96,8 @@ public with sharing class SObjectDataLoader
 			omitFields.add(omitField);
 			if(followRelationships.contains(omitField))
 				followRelationships.remove(omitField);
+			if(keepRelationshipValues.contains(omitField))
+				keepRelationshipValues.remove(omitField);
 			if(followChildRelationships.contains(omitField))
 				followChildRelationships.remove(omitField);
 			return this;
@@ -98,6 +111,7 @@ public with sharing class SObjectDataLoader
 		public SerializeConfig auto(Schema.SObjectType sObjectType)
 		{
 			followRelationships = new Set<Schema.SObjectField>();
+			keepRelationshipValues = new Set<Schema.SObjectField>(); 
 			followChildRelationships = new Set<Schema.SObjectField>();
 			omitFields = new Set<Schema.SObjectField>();
 			Set<Schema.SObjectType> searched = new Set<Schema.SObjectType>();
@@ -718,6 +732,7 @@ public with sharing class SObjectDataLoader
 			// Skip lookup fields not in either of the follow lists
 			if(sObjectFieldDescribe.getType() == Schema.DisplayType.Reference)
 				if(!(config.followRelationships.contains(sObjectField) ||
+					 config.keepRelationshipValues.contains(sObjectField) || 
 				     config.followChildRelationships.contains(sObjectField)))
 				   continue;
 			// Serialize this field..						
