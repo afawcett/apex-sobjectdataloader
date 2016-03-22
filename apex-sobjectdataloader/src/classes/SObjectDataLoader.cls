@@ -38,10 +38,11 @@ public with sharing class SObjectDataLoader
 	public class SerializeConfig
 	{
 		protected Set<Schema.SObjectField> followRelationships;
+		protected Set<Schema.SObjectField> keepRelationshipValues;
 		protected Set<Schema.SObjectField> followChildRelationships;
 		protected Set<Schema.SObjectField> omitFields;
-		protected Map<String,List<String>> userFieldWhiteListMap;
-		protected Map<String,List<String>> userChildRelationshipWhiteListMap;
+		protected Map<String,List<String>> userFieldBlackListMap;
+		protected Map<String,List<String>> userChildRelationshipBlackListMap;
 		protected Set<String> blacklistedNamespacePrefix;
 		protected Boolean omitCurrencyField;
 		protected Map<Schema.SObjectType, Map<String, Schema.SObjectField>> objectFieldDescribeMap;
@@ -50,10 +51,11 @@ public with sharing class SObjectDataLoader
 		public SerializeConfig()
 		{	
 			followRelationships = new Set<Schema.SObjectField>();
+			keepRelationshipValues = new Set<Schema.SObjectField>(); 
 			followChildRelationships = new Set<Schema.SObjectField>();
 			omitFields = new Set<Schema.SObjectField>(); 	
-			userFieldWhiteListMap = new Map<String,List<String>>();	
-			userChildRelationshipWhiteListMap = new Map<String,List<String>>();		
+			userFieldBlackListMap = new Map<String,List<String>>();	
+			userChildRelationshipBlackListMap = new Map<String,List<String>>();		
 			blacklistedNamespacePrefix = new Set<String>();
 			omitCurrencyField =false;
 			objectFieldDescribeMap = new Map<Schema.SObjectType, Map<String, Schema.SObjectField>>();
@@ -65,6 +67,15 @@ public with sharing class SObjectDataLoader
 		public SerializeConfig follow(Schema.SObjectField relationshipField)
 		{
 			followRelationships.add(relationshipField);
+			return this;
+		}
+		
+		/**
+		 * Keep relationship Id value without following (=serializing) the related object
+		 **/
+		public SerializeConfig keepValue(Schema.SObjectField relationshipField)
+		{
+			keepRelationshipValues.add(relationshipField);
 			return this;
 		}
 		
@@ -85,6 +96,8 @@ public with sharing class SObjectDataLoader
 			omitFields.add(omitField);
 			if(followRelationships.contains(omitField))
 				followRelationships.remove(omitField);
+			if(keepRelationshipValues.contains(omitField))
+				keepRelationshipValues.remove(omitField);
 			if(followChildRelationships.contains(omitField))
 				followChildRelationships.remove(omitField);
 			return this;
@@ -98,6 +111,7 @@ public with sharing class SObjectDataLoader
 		public SerializeConfig auto(Schema.SObjectType sObjectType)
 		{
 			followRelationships = new Set<Schema.SObjectField>();
+			keepRelationshipValues = new Set<Schema.SObjectField>(); 
 			followChildRelationships = new Set<Schema.SObjectField>();
 			omitFields = new Set<Schema.SObjectField>();
 			Set<Schema.SObjectType> searched = new Set<Schema.SObjectType>();
@@ -109,18 +123,18 @@ public with sharing class SObjectDataLoader
 		/**
 		 * Provide a map that represents the object field relationship the serializer should whitelist
 		 **/
-		public SerializeConfig addToUserChildRelationShipWhiteList(Map<String,List<String>> childRelationShipWhiteListMap)
+		public SerializeConfig addToUserChildRelationShipBlackList(Map<String,List<String>> childRelationShipBlackListMap)
 		{
-			UserChildRelationshipWhiteListMap.putAll(childRelationShipWhiteListMap);
+			UserChildRelationshipBlackListMap.putAll(childRelationShipBlackListMap);
 			return this;
 		}
 		
 		/**
 		 * Provide a map that represents the object child relationship the serializer should whitelist
 		 **/
-		public SerializeConfig addToUserFieldWhiteList(Map<String,List<String>> FieldWhiteListMap)
+		public SerializeConfig addToUserFieldBlackList(Map<String,List<String>> fieldBlackListMap)
 		{
-			userFieldWhiteListMap.putAll(FieldWhiteListMap);
+			userFieldBlackListMap.putAll(fieldBlackListMap);
 			return this;
 		}
 		
@@ -131,13 +145,13 @@ public with sharing class SObjectDataLoader
 		}
 		
 		/**
-		 * Method adds blacklist Fields common for all Objects to fieldWhitelist 
+		 * Method adds blacklist Fields common for all Objects to fieldBlacklist 
 		**/
 		public SerializeConfig omitCommonFields(Set<String> fieldnames)
 		{
 			if(fieldnames!=null && fieldnames.size()>0)
 			{
-				fieldWhitelist.addAll(fieldnames);
+				fieldBlacklist.addAll(fieldnames);
 				if(fieldnames.contains('CurrencyIsoCode'))
 					omitCurrencyField = true;
 			}
@@ -165,17 +179,17 @@ public with sharing class SObjectDataLoader
 			if(searchChildren)
 			{
 				List<Schema.ChildRelationship> childRelationships = sObjectDescribe.getChildRelationships();
-				Set<String> userChildRelationshipWhiteListSet = new Set<String>();		
-				if(userChildRelationshipWhiteListMap.get(sObjectName)!= null && userChildRelationshipWhiteListMap.get(sObjectName).size()>0)
+				Set<String> userChildRelationshipBlackListSet = new Set<String>();		
+				if(userChildRelationshipBlackListMap.get(sObjectName)!= null && userChildRelationshipBlackListMap.get(sObjectName).size()>0)
 				{
-					userChildRelationshipWhiteListSet.addAll(userChildRelationshipWhiteListMap.get(sObjectName));
+					userChildRelationshipBlackListSet.addAll(userChildRelationshipBlackListMap.get(sObjectName));
 				}
 				for(Schema.ChildRelationship childRelationship : childRelationships)
 				{
 					// Determine which child relationships to automatically follow
 					String childRelationshipName = childRelationship.getRelationshipName();
 					if(childRelationshipName==null || 
-					   childRelationshipWhitelist.contains(childRelationshipName) || userChildRelationshipWhiteListSet.contains(childRelationshipName) || matchNameSpaceForObject(childRelationshipName)) // Skip relationships without names and those whitelisted
+					   childRelationshipBlacklist.contains(childRelationshipName) || userChildRelationshipBlackListSet.contains(childRelationshipName) || matchNameSpaceForObject(childRelationshipName)) // Skip relationships without names and those whitelisted
 						continue;
 					if(childRelationshipName.endsWith('Histories')) // Skip relationships ending in Histories (TODO: consider a RegEx approach?)
 						continue;
@@ -192,10 +206,10 @@ public with sharing class SObjectDataLoader
 				objectFieldDescribeMap.put(sObjectType, sObjectFields);
 			}
 			
-			Set<String> userWhiteListSet = new Set<String>();
-			if(userFieldWhiteListMap.get(sObjectName)!= null && userFieldWhiteListMap.get(sObjectName).size()>0)
+			Set<String> userBlackListSet = new Set<String>();
+			if(userFieldBlackListMap.get(sObjectName)!= null && userFieldBlackListMap.get(sObjectName).size()>0)
 			{
-				userWhiteListSet.addAll(userFieldWhiteListMap.get(sObjectName));
+				userBlackListSet.addAll(userFieldBlackListMap.get(sObjectName));
 			}			
 			// Follow lookup relationships to long as they have not previously been added as child references and are not whitelisted
 			//If the Sobject Field is referenceTo as 'User' and 'Organization' then restrict it to search its Relationships 
@@ -205,21 +219,21 @@ public with sharing class SObjectDataLoader
 				{
 					Boolean omitRefernceToFields = false;
 					for(Schema.sObjectType refernceToType : sObjectField.getDescribe().getReferenceTo()){
-						if(referenceToWhitelist.contains(refernceToType.getDescribe().getName()))
+						if(referenceToBlacklist.contains(refernceToType.getDescribe().getName()))
 							omitRefernceToFields = true;
 					}
-					if(!followChildRelationships.contains(sObjectField) && !relationshipWhitelist.contains(sObjectField.getDescribe().getName()) && !omitRefernceToFields && !userWhiteListSet.contains(sObjectField.getDescribe().getName()) && !matchNameSpaceForObject(sObjectField.getDescribe().getName()))
+					if(!followChildRelationships.contains(sObjectField) && !relationshipBlacklist.contains(sObjectField.getDescribe().getName()) && !omitRefernceToFields && !userBlackListSet.contains(sObjectField.getDescribe().getName()) && !matchNameSpaceForObject(sObjectField.getDescribe().getName()))
 					{
 						if(sObjectField.getDescribe().getReferenceTo()!=null && sObjectField.getDescribe().getReferenceTo().size()>0)
 							follow(sObjectField).
 								searchRelationships(sObjectField.getDescribe().getReferenceTo()[0], lookupDepth+1, childDepth, false, searched, searchedParentOnly);
 					}
 				}
-				else if(userWhiteListSet.contains(sObjectField.getDescribe().getName()) || matchNameSpaceForObject(sObjectField.getDescribe().getName()))
+				else if(userBlackListSet.contains(sObjectField.getDescribe().getName()) || matchNameSpaceForObject(sObjectField.getDescribe().getName()))
 				{
                 	omit(sObjectField);
 				}
-                else if(fieldWhitelist.contains(sObjectField.getDescribe().getName()))
+                else if(fieldBlacklist.contains(sObjectField.getDescribe().getName()))
                 {
                     omit(sObjectField);
                 } 
@@ -237,7 +251,7 @@ public with sharing class SObjectDataLoader
 			return namespaceMatched;
 		} 
 		// Standard fields that are not included when using the auto config
-		private Set<String> relationshipWhitelist = 
+		private Set<String> relationshipBlacklist = 
 			new Set<String>
 				{ 'OwnerId',
 				  'CreatedById',
@@ -246,7 +260,7 @@ public with sharing class SObjectDataLoader
 				};
 				
 		// Standard child relationships that are not included when using the auto config
-		private Set<String> childRelationshipWhitelist = 
+		private Set<String> childRelationshipBlacklist = 
 			new Set<String> 
 				{ 'Shares', 
 				  'ProcessInstances', 
@@ -269,14 +283,14 @@ public with sharing class SObjectDataLoader
 				  };		
 	
 		// Standard RefernceTo that are not included when using the auto config	
-		private Set<String> referenceToWhitelist = 
+		private Set<String> referenceToBlacklist = 
 			new Set<String>
 				{ 'User',
 				  'Organization'
 				};
     
         // Standard fiels to be omitted
-        private Set<String> fieldWhitelist = 
+        private Set<String> fieldBlacklist = 
             new Set<String>
                 {
                 	'LastViewedDate',
@@ -718,6 +732,7 @@ public with sharing class SObjectDataLoader
 			// Skip lookup fields not in either of the follow lists
 			if(sObjectFieldDescribe.getType() == Schema.DisplayType.Reference)
 				if(!(config.followRelationships.contains(sObjectField) ||
+					 config.keepRelationshipValues.contains(sObjectField) || 
 				     config.followChildRelationships.contains(sObjectField)))
 				   continue;
 			// Serialize this field..						

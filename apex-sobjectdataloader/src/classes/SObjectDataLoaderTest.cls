@@ -240,7 +240,7 @@ private class SObjectDataLoaderTest {
     }
 
     /**
-        --Without Whitelisting RecordTypeId, the autoconfig serialize/deserialize
+        --Without Blacklisting RecordTypeId, the autoconfig serialize/deserialize
             will try to insert a new RecordType object which throws:
             'System.TypeException: DML not allowed on RecordType'
 
@@ -494,12 +494,12 @@ private class SObjectDataLoaderTest {
 	}
     
     @isTest(seeAllData=False)
-    private static void userFieldWhiteListTest()
+    private static void userFieldBlackListTest()
     {
 		Id idToSerialize;
     	Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig> strategyBySObjectType = new Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig>();
-	 	Map<String,List<String>> fieldWhiteListMap = new Map<String,List<String>>();
-	 	fieldWhiteListMap.put('Account',new List<String>{'Site'});
+	 	Map<String,List<String>> fieldBlackListMap = new Map<String,List<String>>();
+	 	fieldBlackListMap.put('Account',new List<String>{'Site'});
 	 	Map<String, Schema.SObjectType> globalDescribeMap = Schema.getGlobalDescribe();
     	Schema.SObjectType accSObjectType = globalDescribeMap.get('Account');
 		SObject acc = accSObjectType.newSObject();
@@ -518,7 +518,7 @@ private class SObjectDataLoaderTest {
 		Schema.SObjectType sObjectType = acc.Id.getSObjectType();
 		if(strategyBySObjectType.get(sObjectType)==null)
 		{
-			SObjectDataLoader.SerializeConfig config = new SObjectDataLoader.SerializeConfig().addToUserFieldBlackList(fieldWhiteListMap);
+			SObjectDataLoader.SerializeConfig config = new SObjectDataLoader.SerializeConfig().addToUserFieldBlackList(fieldBlackListMap);
 			strategyBySObjectType.put(sObjectType,config.auto(idToSerialize.getSObjectType()));
 		}
 		String jsonString = SObjectDataLoader.serialize(new Set<Id>{idToSerialize}, strategyBySObjectType);
@@ -527,12 +527,12 @@ private class SObjectDataLoaderTest {
 	}
     
     @isTest(seeAllData=False)
-	private static void userChildWhiteListTest()
+	private static void userChildBlackListTest()
     {
 		Id idToSerialize;
     	Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig> strategyBySObjectType = new Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig>();
-	 	Map<String,List<String>> childRelationshipWhiteListMap = new Map<String,List<String>>();
-	 	childRelationshipWhiteListMap.put('Account',new List<String>{'Contacts'});
+	 	Map<String,List<String>> childRelationshipBlackListMap = new Map<String,List<String>>();
+	 	childRelationshipBlackListMap.put('Account',new List<String>{'Contacts'});
 	 	Map<String, Schema.SObjectType> globalDescribeMap = Schema.getGlobalDescribe();
     	Schema.SObjectType accSObjectType = globalDescribeMap.get('Account');
 		SObject acc = accSObjectType.newSObject();
@@ -551,7 +551,7 @@ private class SObjectDataLoaderTest {
 		Schema.SObjectType sObjectType = acc.Id.getSObjectType();
 		if(strategyBySObjectType.get(sObjectType)==null)
 		{
-			SObjectDataLoader.SerializeConfig config = new SObjectDataLoader.SerializeConfig().addToUserChildRelationShipBlackList(childRelationshipWhiteListMap);
+			SObjectDataLoader.SerializeConfig config = new SObjectDataLoader.SerializeConfig().addToUserChildRelationShipBlackList(childRelationshipBlackListMap);
 			strategyBySObjectType.put(sObjectType,config.auto(idToSerialize.getSObjectType()));
 		}
 		String jsonString = SObjectDataLoader.serialize(new Set<Id>{idToSerialize}, strategyBySObjectType);
@@ -560,12 +560,12 @@ private class SObjectDataLoaderTest {
     }
     
     @isTest(seeAllData=False)
-	private static void userFieldWhiteListTestWithPackageBlaclist()
+	private static void userFieldBlackListTestWithPackageBlaclist()
     {
 		Id idToSerialize;
     	Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig> strategyBySObjectType = new Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig>();
-	 	Map<String,List<String>> fieldWhiteListMap = new Map<String,List<String>>();
-	 	fieldWhiteListMap.put('Account',new List<String>{'Site'});
+	 	Map<String,List<String>> fieldBlackListMap = new Map<String,List<String>>();
+	 	fieldBlackListMap.put('Account',new List<String>{'Site'});
 	 	Map<String, Schema.SObjectType> globalDescribeMap = Schema.getGlobalDescribe();
     	Schema.SObjectType accSObjectType = globalDescribeMap.get('Account');
 		SObject acc = accSObjectType.newSObject();
@@ -585,7 +585,7 @@ private class SObjectDataLoaderTest {
 		Schema.SObjectType sObjectType = acc.Id.getSObjectType();
 		if(strategyBySObjectType.get(sObjectType)==null)
 		{
-			SObjectDataLoader.SerializeConfig config = new SObjectDataLoader.SerializeConfig().addToBlacklistedNamespace(packageNamespaceSet).addToUserFieldBlackList(fieldWhiteListMap);
+			SObjectDataLoader.SerializeConfig config = new SObjectDataLoader.SerializeConfig().addToBlacklistedNamespace(packageNamespaceSet).addToUserFieldBlackList(fieldBlackListMap);
 			strategyBySObjectType.put(sObjectType,config.auto(idToSerialize.getSObjectType()));
 		}
 		String jsonString = SObjectDataLoader.serialize(new Set<Id>{idToSerialize}, strategyBySObjectType);
@@ -594,12 +594,12 @@ private class SObjectDataLoaderTest {
 	}
 	
 	@isTest(seeAllData=False)
-    private static void userChildWhiteListTestWithPackageBlaclist()
+    private static void userChildBlackListTestWithPackageBlaclist()
     {
 		Id idToSerialize;
     	Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig> strategyBySObjectType = new Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig>();
-	 	Map<String,List<String>> childRelationshipWhiteListMap = new Map<String,List<String>>();
-	 	childRelationshipWhiteListMap.put('Account',new List<String>{'Contacts'});
+	 	Map<String,List<String>> childRelationshipBlackListMap = new Map<String,List<String>>();
+	 	childRelationshipBlackListMap.put('Account',new List<String>{'Contacts'});
 	 	Map<String, Schema.SObjectType> globalDescribeMap = Schema.getGlobalDescribe();
     	Schema.SObjectType accSObjectType = globalDescribeMap.get('Account');
 		SObject acc = accSObjectType.newSObject();
@@ -619,7 +619,7 @@ private class SObjectDataLoaderTest {
 		Schema.SObjectType sObjectType = acc.Id.getSObjectType();
 		if(strategyBySObjectType.get(sObjectType)==null)
 		{
-			SObjectDataLoader.SerializeConfig config = new SObjectDataLoader.SerializeConfig().addToBlacklistedNamespace(packageNamespaceSet).addToUserChildRelationShipBlackList(childRelationshipWhiteListMap);
+			SObjectDataLoader.SerializeConfig config = new SObjectDataLoader.SerializeConfig().addToBlacklistedNamespace(packageNamespaceSet).addToUserChildRelationShipBlackList(childRelationshipBlackListMap);
 			strategyBySObjectType.put(sObjectType,config.auto(idToSerialize.getSObjectType()));
 		}
 		String jsonString = SObjectDataLoader.serialize(new Set<Id>{idToSerialize}, strategyBySObjectType);
@@ -636,7 +636,7 @@ private class SObjectDataLoaderTest {
     {
 		Id idToSerialize;
     	Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig> strategyBySObjectType = new Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig>();
-	 	Map<String,List<String>> childRelationshipWhiteListMap = new Map<String,List<String>>();
+	 	Map<String,List<String>> childRelationshipBlackListMap = new Map<String,List<String>>();
 	 	Map<String, Schema.SObjectType> globalDescribeMap = Schema.getGlobalDescribe();
     	Schema.SObjectType accSObjectType = globalDescribeMap.get('Account');
 		SObject acc = accSObjectType.newSObject();
@@ -663,15 +663,16 @@ private class SObjectDataLoaderTest {
     {
 		Id idToSerialize;
     	Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig> strategyBySObjectType = new Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig>();
-	 	Map<String,List<String>> childRelationshipWhiteListMap = new Map<String,List<String>>();
+	 	Map<String,List<String>> childRelationshipBlackListMap = new Map<String,List<String>>();
 	 	Map<String, Schema.SObjectType> globalDescribeMap = Schema.getGlobalDescribe();
     	Schema.SObjectType accSObjectType = globalDescribeMap.get('Account');
 		SObject acc = accSObjectType.newSObject();
 		acc.put('Name', 'testAccount');
 		acc.put('Site', 'testSite');
-		acc.put('BillingCity', 'abcCity');
+        // Using Shipping address instead of Billing, since CI process is failing due to orgs having salesforce's duplicate management features ON for this field.
+		/*acc.put('BillingCity', 'abcCity');
 		acc.put('BillingCountry', 'abcCountry');
-		acc.put('BillingState', 'abcState');
+		acc.put('BillingState', 'abcState');*/
 		acc.put('ShippingCity', 'defCity');
 		acc.put('ShippingCountry', 'defCountry');
         insert acc;
@@ -680,7 +681,7 @@ private class SObjectDataLoaderTest {
 		System.assertEquals(1, accIdSet.size());
 		List<Account> accList = [select Name, BillingCity, BillingCountry, BillingState, BillingStreet, ShippingCity, ShippingCountry from Account where Id in :accIdSet];
 		System.assertEquals(1,accList.size());
-		System.assertEquals('abcCity',accList[0].BillingCity);
+		System.assertEquals('defCity',accList[0].ShippingCity);
 		System.assertEquals('defCountry',accList[0].ShippingCountry);
     }
     
@@ -692,7 +693,7 @@ private class SObjectDataLoaderTest {
     {
 		Id idToSerialize;
     	Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig> strategyBySObjectType = new Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig>();
-	 	Map<String,List<String>> childRelationshipWhiteListMap = new Map<String,List<String>>();
+	 	Map<String,List<String>> childRelationshipBlackListMap = new Map<String,List<String>>();
 	 	Map<String, Schema.SObjectType> globalDescribeMap = Schema.getGlobalDescribe();
     	Schema.SObjectType conSObjectType = globalDescribeMap.get('Contact');
 		SObject con = conSObjectType.newSObject();
@@ -724,7 +725,7 @@ private class SObjectDataLoaderTest {
     {
 		Id idToSerialize;
     	Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig> strategyBySObjectType = new Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig>();
-	 	Map<String,List<String>> childRelationshipWhiteListMap = new Map<String,List<String>>();
+	 	Map<String,List<String>> childRelationshipBlackListMap = new Map<String,List<String>>();
 	 	Map<String, Schema.SObjectType> globalDescribeMap = Schema.getGlobalDescribe();
     	Schema.SObjectType leadSObjectType = globalDescribeMap.get('Lead');
 		SObject testLead = leadSObjectType.newSObject();
