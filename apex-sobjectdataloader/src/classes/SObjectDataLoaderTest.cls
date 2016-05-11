@@ -448,7 +448,12 @@ private class SObjectDataLoaderTest {
         '"Name":"ChildAccount","ParentId":"001b000000PBLqsAAH","CurrencyIsoCode":"USD","SystemModstamp":"2014-03-06T06:04:38.000+0000","CreatedDate":"2014-03-01T11:42:34.000+0000",'+
         '"LastModifiedDate":"2014-03-06T06:04:38.000+0000","IsDeleted":false,"Id":"001b000000P8LZgAAN"},{"attributes":{"type":"Account","url":"/services/data/v29.0/sobjects/Account/001b000000PBLqsAAH"},'+
         '"Name":"Parent Account","CurrencyIsoCode":"USD","SystemModstamp":"2014-03-06T06:04:15.000+0000","CreatedDate":"2014-03-06T06:04:15.000+0000","LastModifiedDate":"2014-03-06T06:04:15.000+0000",'+
-        '"IsDeleted":false,"Id":"001b000000PBLqsAAH"}],"ObjectType":"Account"}]}' ;
+        '"IsDeleted":false,"Id":"001b000000PBLqsAAH"}],"ObjectType":"Account"}]}';
+
+        if(!UserInfo.IsMultiCurrencyOrganization())
+        {
+            testObjectJson = testObjectJson.remove('"CurrencyIsoCode":"USD",');
+        }
         
         delete [Select Id from Account where Name = 'ChildAccount']; 
         delete [Select Id from Account where Name = 'Parent Account']; 
@@ -511,8 +516,11 @@ private class SObjectDataLoaderTest {
     	Schema.SObjectType conSObjectType = globalDescribeMap.get('Contact');
 		SObject con = conSObjectType.newSObject();
 		con.put('LastName','testContact');
-		con.put('CurrencyIsoCode','USD');
-		con.put('AccountId',acc.Id);
+        if(UserInfo.IsMultiCurrencyOrganization())
+        {
+            con.put('CurrencyIsoCode','USD');
+        }
+        con.put('AccountId',acc.Id);
 		insert con;
 		
 		Schema.SObjectType sObjectType = acc.Id.getSObjectType();
@@ -544,8 +552,11 @@ private class SObjectDataLoaderTest {
     	Schema.SObjectType conSObjectType = globalDescribeMap.get('Contact');
 		SObject con = conSObjectType.newSObject();
 		con.put('LastName','testContact');
-		con.put('CurrencyIsoCode','USD');
-		con.put('AccountId',acc.Id);
+        if(UserInfo.IsMultiCurrencyOrganization())
+        {
+            con.put('CurrencyIsoCode','USD');
+        }
+        con.put('AccountId',acc.Id);
 		insert con;
 		
 		Schema.SObjectType sObjectType = acc.Id.getSObjectType();
@@ -577,8 +588,11 @@ private class SObjectDataLoaderTest {
     	Schema.SObjectType conSObjectType = globalDescribeMap.get('Contact');
 		SObject con = conSObjectType.newSObject();
 		con.put('LastName','testContact');
-		con.put('CurrencyIsoCode','USD');
-		con.put('AccountId',acc.Id);
+        if(UserInfo.IsMultiCurrencyOrganization())
+        {
+            con.put('CurrencyIsoCode','USD');
+        }
+        con.put('AccountId',acc.Id);
 		insert con;
 		
 		Set<String> packageNamespaceSet = new Set<String>{'abcd','pqrs'};
@@ -611,7 +625,10 @@ private class SObjectDataLoaderTest {
     	Schema.SObjectType conSObjectType = globalDescribeMap.get('Contact');
 		SObject con = conSObjectType.newSObject();
 		con.put('LastName','testContact');
-		con.put('CurrencyIsoCode','USD');
+        if(UserInfo.IsMultiCurrencyOrganization())
+        {
+          con.put('CurrencyIsoCode','USD');
+        }
 		con.put('AccountId',acc.Id);
 		insert con;
 		
