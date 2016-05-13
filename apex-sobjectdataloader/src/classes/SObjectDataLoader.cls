@@ -46,6 +46,8 @@ public with sharing class SObjectDataLoader
 		protected Set<String> blacklistedNamespacePrefix;
 		protected Boolean omitCurrencyField;
 		protected Map<Schema.SObjectType, Map<String, Schema.SObjectField>> objectFieldDescribeMap;
+		protected Integer maxLookupDepth;
+		protected Integer maxChildDepth;
 		
 		
 		public SerializeConfig()
@@ -59,6 +61,8 @@ public with sharing class SObjectDataLoader
 			blacklistedNamespacePrefix = new Set<String>();
 			omitCurrencyField =false;
 			objectFieldDescribeMap = new Map<Schema.SObjectType, Map<String, Schema.SObjectField>>();
+			maxLookupDepth = 3;
+			maxChildDepth = 3;
 		}
 		
 		/**
@@ -85,6 +89,24 @@ public with sharing class SObjectDataLoader
 		public SerializeConfig followChild(Schema.SObjectField relationshipField)
 		{
 			followChildRelationships.add(relationshipField);
+			return this;
+		}
+		
+		/**
+		 * Define maximum depth to where relationship fields are followed
+		 **/
+		public SerializeConfig maxLookupDepth(Integer value)
+		{
+			maxLookupDepth = value;
+			return this;
+		}
+		
+		/**
+		 * Define maximum depth to where child records are followed
+		 **/
+		public SerializeConfig maxChildDepth(Integer value)
+		{
+			maxChildDepth = value;
 			return this;
 		}
 		
@@ -625,9 +647,14 @@ public with sharing class SObjectDataLoader
 		// Config?
 		if(config==null)
 			throw new SerializerException('Must pass a valid SerializeConfig instance.');
+		
 		// Stop infinite recursion
-		if(lookupDepth > 3 || childDepth > 3) // TODO: Make max depth configurable
-			return;
+		if(lookupDepth == config.maxLookupDepth) {
+			throw new PreventInfinityLoopException('Maximum Referencing field depth of ' + config.maxLookupDepth + ' is reached');
+		}
+		else if(childDepth == config.maxChildDepth) {
+			throw new PreventInfinityLoopException('Maximum Child reference depth of ' + config.maxChildDepth + ' is reached');
+		}
 			
 		// Describe object and determine fields to serialize
 		Schema.DescribeSObjectResult sObjectDesc = sObjectType.getDescribe();
@@ -843,4 +870,9 @@ public with sharing class SObjectDataLoader
 		public String ObjectType;
 		public List<SObject> Records;	
 	}
+	
+	/**
+	 * Exception thrown in case the max depth for relationships is reached
+	 **/
+	public class PreventInfinityLoopException extends Exception{}
 }

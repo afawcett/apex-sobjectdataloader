@@ -678,6 +678,8 @@ private class SObjectDataLoaderTest {
 	@isTest(seeAllData=False)
 	private static void testOmitCompoundFieldsForAccount()
     {
+        System.Savepoint savePoint = Database.setSavepoint();
+        
 		Id idToSerialize;
     	Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig> strategyBySObjectType = new Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig>();
 	 	Map<String,List<String>> childRelationshipBlackListMap = new Map<String,List<String>>();
@@ -694,6 +696,9 @@ private class SObjectDataLoaderTest {
 		acc.put('ShippingCountry', 'defCountry');
         insert acc;
 		String serializedRecord = SObjectDataLoader.serialize(new Set<Id>{acc.Id}, new SObjectDataLoader.SerializeConfig().auto(acc.Id.getSObjectType()));
+		
+        Database.rollback(savePoint);
+		
 		Set<Id> accIdSet = SObjectDataLoader.deserialize(serializedRecord);
 		System.assertEquals(1, accIdSet.size());
 		List<Account> accList = [select Name, BillingCity, BillingCountry, BillingState, BillingStreet, ShippingCity, ShippingCountry from Account where Id in :accIdSet];
@@ -777,5 +782,34 @@ private class SObjectDataLoaderTest {
 		System.assert(recordBundleMap.keyset().contains('Account'));
 		List<Account> accList = (List<Account>)recordBundleMap.get('Account');
 		System.assertEquals(accList[0].Name,'TestAccount');
+    }
+    
+	@IsTest(seeAllData=true)
+	public static void testManuallyConfigureMaxDepths()
+    {   
+    	// Setup   
+        Account grandParent = new Account(Name = 'Grand Parent');
+        insert grandParent;
+        Account parent = new Account(ParentId = grandParent.Id, Name = 'Parent');
+        insert parent;
+        Account child = new Account(ParentId = parent.Id, Name = 'Child');
+        insert child;
+        
+		SObjectDataLoader.PreventInfinityLoopException expectedException = null;
+		
+        // Execute
+		try {
+	        SObjectDataLoader.serialize(new Set<Id> {child.Id}, 
+							            new SObjectDataLoader.SerializeConfig()
+													            	.maxLookupDepth(1)
+													                .maxChildDepth(1)
+													                .follow(Account.ParentId));
+		}
+		catch (SObjectDataLoader.PreventInfinityLoopException ex) {
+			expectedException = ex;
+		}
+        
+        //Verify
+        System.assertNotEquals(null, expectedException);
     }
 }
