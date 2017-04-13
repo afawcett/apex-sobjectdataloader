@@ -744,7 +744,8 @@ private class SObjectDataLoaderTest {
 	*/
 	@isTest(seeAllData=False)
 	private static void testOmitCompoundFieldsForLead()
-    {
+    {		System.Savepoint savePoint = Database.setSavepoint();
+     
 		Id idToSerialize;
     	Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig> strategyBySObjectType = new Map <Schema.SObjectType,SObjectDataLoader.SerializeConfig>();
 	 	Map<String,List<String>> childRelationshipBlackListMap = new Map<String,List<String>>();
@@ -761,7 +762,12 @@ private class SObjectDataLoaderTest {
 		testLead.put('State', 'abcState');
 		testLead.put('PostalCode', '123456');
         insert testLead;
+		
 		String serializedRecord = SObjectDataLoader.serialize(new Set<Id>{testLead.Id}, new SObjectDataLoader.SerializeConfig().auto(testLead.Id.getSObjectType()));
+		
+     		// Remove original lead to prevent duplicate detection failure
+     		Database.rollback(savePoint);
+		
 		Set<Id> leadIdSet = SObjectDataLoader.deserialize(serializedRecord);
 		System.assertEquals(1, leadIdSet.size());
 		List<Lead> leadList = [select LastName, FirstName, Company, LeadSource, Street, City, Country, State, PostalCode from Lead where Id in :leadIdSet];
