@@ -760,7 +760,8 @@ public with sharing class SObjectDataLoader
 			if(sObjectFieldDescribe.getType() == Schema.DisplayType.Reference)
 				if(!(config.followRelationships.contains(sObjectField) ||
 					 config.keepRelationshipValues.contains(sObjectField) || 
-				     config.followChildRelationships.contains(sObjectField)))
+				     config.followChildRelationships.contains(sObjectField) ||
+				     sObjectField.getDescribe().getName().equals('RecordTypeId')))
 				   continue;
 			// Serialize this field..						
 			serializeFields.add(sObjectField);
