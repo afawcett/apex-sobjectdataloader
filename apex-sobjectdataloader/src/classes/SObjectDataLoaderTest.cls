@@ -487,7 +487,7 @@ private class SObjectDataLoaderTest {
  		// Execute
  		Exception unexpected = null;
  		try {
-        	SObjectDataLoader.deserialize(jsonString, new TestConfig());
+        	SObjectDataLoader.deserialize(jsonString, new TestCallback());
  		}
  		catch(DmlException dmlEx) {
  			unexpected = dmlEx;
@@ -847,7 +847,7 @@ private class SObjectDataLoaderTest {
     
     // INNER CLASSES
     
-    public class TestConfig implements SObjectDataLoader.IDeserializeCallback {
+    public class TestCallback implements SObjectDataLoader.IDeserializeCallback {
 		public void unresolvedReferences(SObjectType soType, List<SObjectDataLoader.UnresolvedReferences> unresolved) {
 			//doAnything
 		}
