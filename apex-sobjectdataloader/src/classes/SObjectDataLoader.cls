@@ -501,12 +501,12 @@ public with sharing class SObjectDataLoader
 	                	Set<Schema.SObjectField> unresolvableFieldReferences = new Set<Schema.SObjectField>(); 
 	                	updateReferenceFieldsInRecords(relationshipsFields, resolvableFieldReferences, recordsByOriginalId, originalRecord, unresolvableFieldReferences);
 	                	
-	                	if(!unresolvableFieldReferences.isEmpty() && callback!=null)
+	                	if(!unresolvableFieldReferences.isEmpty() && callback != null)
 	                	{
 	                		UnresolvedReferences unresolveableReferences = new UnresolvedReferences();
 	                		unresolveableReferences.Record = newRecord;
 	                		unresolveableReferences.References = unresolvableFieldReferences;
-	                		callback.unresolvedReferences(sObjectType, new List<UnresolvedReferences>{unresolveableReferences});
+	                		callbackUnresolvedReferencesList.add(unresolveableReferences);
 	                	}
 	                	
 	                	if(!resolvableFieldReferences.isEmpty())
@@ -527,6 +527,12 @@ public with sharing class SObjectDataLoader
 	            	}
 				}
 			}
+            
+            // Let the caller attempt to resolve any references the above could not
+            if(callback != null && !callbackUnresolvedReferencesList.isEmpty())
+            {
+                callback.unresolvedReferences(sObjectType, callbackUnresolvedReferencesList);
+            }
             
             insert recordsToInsert.values();
             recordSetBundle.Records = recordsToInsert.values();
