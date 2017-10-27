@@ -491,7 +491,7 @@ public with sharing class SObjectDataLoader
 							id newRecordTypeId = recordTypeIdMap.get((Id)originalRecord.get('RecordTypeId'));
 							
 							// Update the record with the new Id
-							originalRecord.put('RecordTypeId', newRecordTypeId);
+							newRecord.put('RecordTypeId', newRecordTypeId);
 						}
 					}
 	
