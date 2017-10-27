@@ -564,7 +564,7 @@ public with sharing class SObjectDataLoader
 			for(SObject originalRecord : recordSetBundle.Records)
 			{
 				if(result.get(originalRecord.Id) == null){
-                    result.put(originalRecord.Id, originalRecord.clone());
+                    result.put(originalRecord.Id, originalRecord.clone().clone());
 				}
 			}
 		}
