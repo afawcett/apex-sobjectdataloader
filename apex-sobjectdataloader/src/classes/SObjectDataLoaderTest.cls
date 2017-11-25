@@ -271,7 +271,7 @@ private class SObjectDataLoaderTest {
             Set<Id> resultIds = SObjectDataLoader.deserialize(serializedData);
             
             //dynamic soql will prevent any compile time errors if RecordTypeId field doesn't exist
-            String accountsQuery = 'SELECT Id, RecordTypeId FROM Account WHERE Id IN :newAccountIds';
+            String accountsQuery = 'SELECT Id, RecordTypeId FROM Account WHERE Id IN :resultIds';
             testAccounts = Database.query(accountsQuery);
             Set<Id> recordTypeIdsOfNewAccounts = new Set<Id>();
 
@@ -454,10 +454,6 @@ private class SObjectDataLoaderTest {
         {
             testObjectJson = testObjectJson.remove('"CurrencyIsoCode":"USD",');
         }
-        
-        delete [Select Id from Account where Name = 'ChildAccount']; 
-        delete [Select Id from Account where Name = 'Parent Account']; 
-        delete [Select Id from Contact where Name = 'MyContact'];
 
  		//Importing Records
         Set<Id> resultIds = SObjectDataLoader.deserialize(testObjectJson);
@@ -470,6 +466,35 @@ private class SObjectDataLoaderTest {
         system.assertEquals(contactRecords.size(), 1);
         system.assertEquals(parentAccountRecords[0].Id, childAccountRecords[0].ParentId);
         system.assertEquals(childAccountRecords[0].Id,contactRecords[0].AccountId);
+    }
+    
+     /*
+    * Donot save an record subcomponent if error occurs
+    */
+     @isTest(seeAllData=False)
+     private static void unorderedRecordsinJsonWontFailWithConfig()
+    {
+    	// Setup
+        String jsonString = '{"RecordSetBundles":[{"Records":[{"attributes":{"type":"Contact","url":"/services/data/v29.0/sobjects/Contact/003b000000NStFRAA1"},'+
+        '"IsEmailBounced":false,"HasOptedOutOfFax":false,"LastModifiedDate":"2014-03-01T12:32:28.000+0000","HasOptedOutOfEmail":false,'+
+        '"LastName":"MyContact","Name":"MyContact","DoNotCall":false,"AccountId":"001b000000P8LZgAAN","SystemModstamp":"2014-03-01T12:32:28.000+0000","CreatedDate":"2014-03-01T12:11:58.000+0000",'+
+        '"IsDeleted":false,"Id":"003b000000NStFRAA1"}],"ObjectType":"Contact"},{"Records":[{"attributes":{"type":"Account","url":"/services/data/v29.0/sobjects/Account/001b000000P8LZgAAN"},'+
+        '"Name":"ChildAccount","ParentId":"001b000000PBLqsAAH","SystemModstamp":"2014-03-06T06:04:38.000+0000","CreatedDate":"2014-03-01T11:42:34.000+0000",'+
+        '"LastModifiedDate":"2014-03-06T06:04:38.000+0000","IsDeleted":false,"Id":"001b000000P8LZgAAN"},{"attributes":{"type":"Account","url":"/services/data/v29.0/sobjects/Account/001b000000PBLqsAAH"},'+
+        '"Name":"Parent Account","SystemModstamp":"2014-03-06T06:04:15.000+0000","CreatedDate":"2014-03-06T06:04:15.000+0000","LastModifiedDate":"2014-03-06T06:04:15.000+0000",'+
+        '"IsDeleted":false,"Id":"001b000000PBLqsAAH"}],"ObjectType":"Account"}]}';
+		
+ 		// Execute
+ 		Exception unexpected = null;
+ 		try {
+        	SObjectDataLoader.deserialize(jsonString, new TestCallback());
+ 		}
+ 		catch(DmlException dmlEx) {
+ 			unexpected = dmlEx;
+ 		}
+        
+        //Verify
+        System.assertEquals(null, unexpected);
     }
     
     @isTest(seeAllData=False)
@@ -818,4 +843,13 @@ private class SObjectDataLoaderTest {
         //Verify
         System.assertNotEquals(null, expectedException);
     }
+    
+    
+    // INNER CLASSES
+    
+    public class TestCallback implements SObjectDataLoader.IDeserializeCallback {
+		public void unresolvedReferences(SObjectType soType, List<SObjectDataLoader.UnresolvedReferences> unresolved) {
+			//doAnything
+		}
+	}
 }

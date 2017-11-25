@@ -444,15 +444,13 @@ public with sharing class SObjectDataLoader
 		} 
 
 		// Map to track original ID's against the new SObject record instances being inserted
-		Map<Id, SObject> recordsByOriginalId = new Map<Id, SObject>();
+		Map<Id, SObject> recordsByOriginalId = clonesById(recordsBundle.recordSetBundles);
 		
 		// Record set bundles are already ordered in dependency order due to serialisation approach
 		Map<String, Schema.SObjectType> sObjectsByType = Schema.getGlobalDescribe();
 		List<UnresolvedReferences> unresolvedReferencesByRecord = new List<UnresolvedReferences>(); 
 		for(RecordSetBundle recordSetBundle : recordsBundle.recordSetBundles)
 		{
-			// List of records to be inserted after de-serialization
-            List<Sobject> recordsToInsert = new List<Sobject>();
 			// Determine lookup / relationship fields to update prior to inserting these records
 			Schema.SObjectType sObjectType = sObjectsByType.get(recordSetBundle.ObjectType);
 			Map<String, Schema.SObjectField> sObjectFields;
@@ -475,78 +473,73 @@ public with sharing class SObjectDataLoader
 				 		selfReferenceFields.add(sObjectField.getDescribe().getName());
 				 	}
 				}
-					
 			}
+			
+			// List of records to be inserted after de-serialization
+            Map<Id, Sobject> recordsToInsert = new Map<Id, Sobject>();
+            
 			// Prepare records for insert
 			for(SObject originalRecord : recordSetBundle.Records)
 			{
-				// Update the record type ID if this object supports record types
-				if (sObjectFields.containsKey('recordtypeid')) {
-					if (originalRecord.get('RecordTypeId') != null) {
-						// Get the new record type Id 
-						id newRecordTypeId = recordTypeIdMap.get((Id)originalRecord.get('RecordTypeId'));	
-						
-						// Update the record with the new Id
-						originalRecord.put('RecordTypeId', newRecordTypeId);	
+				if(!recordsToInsert.containsKey(originalRecord.Id))
+				{
+					SObject newRecord = recordsByOriginalId.get(originalRecord.Id);
+					// Update the record type ID if this object supports record types
+					if (sObjectFields.containsKey('recordtypeid')) {
+						if (originalRecord.get('RecordTypeId') != null) {
+							// Get the new record type Id
+							id newRecordTypeId = recordTypeIdMap.get((Id)originalRecord.get('RecordTypeId'));
 							
+							// Update the record with the new Id
+							newRecord.put('RecordTypeId', newRecordTypeId);
+						}
 					}
+	
+	            	if(!relationshipsFields.isEmpty())
+	            	{
+	                	Set<Schema.SObjectField> resolvableFieldReferences = new Set<Schema.SObjectField>();
+	                	Set<Schema.SObjectField> unresolvableFieldReferences = new Set<Schema.SObjectField>(); 
+	                	updateReferenceFieldsInRecords(relationshipsFields, resolvableFieldReferences, recordsByOriginalId, originalRecord, unresolvableFieldReferences);
+	                	
+	                	if(!unresolvableFieldReferences.isEmpty() && callback != null)
+	                	{
+	                		UnresolvedReferences unresolveableReferences = new UnresolvedReferences();
+	                		unresolveableReferences.Record = newRecord;
+	                		unresolveableReferences.References = unresolvableFieldReferences;
+	                		callbackUnresolvedReferencesList.add(unresolveableReferences);
+	                	}
+	                	
+	                	if(!resolvableFieldReferences.isEmpty())
+	                	{
+	                		UnresolvedReferences unresolvedReferences = new UnresolvedReferences();
+	                		unresolvedReferences.Record = originalRecord;
+	                		unresolvedReferences.References = resolvableFieldReferences;
+	                		unresolvedReferencesByRecord.add(unresolvedReferences);
+	                	}
+	                	else
+	                	{
+	                    	recordsToInsert.put(originalRecord.Id, newRecord);
+	                	}
+	            	}
+	            	else
+	            	{
+	                	recordsToInsert.put(originalRecord.Id, newRecord);
+	            	}
 				}
-
-				// Clone the deserialised SObject to remove the original Id prior to inserting it
-				SObject newRecord = originalRecord.clone().clone();
-				if(recordsByOriginalId.get(originalRecord.Id)==null){
-					// Map the new cloned record to its old Id (once inserted this can be used to obtain the new id)
-                    recordsByOriginalId.put(originalRecord.Id, newRecord);
-                	if(relationshipsFields.size()>0)
-                	{
-                    	Set<Schema.SObjectField> filteredUnresolvedFieldReferences = new Set<Schema.SObjectField>();
-                    	Set<Schema.SObjectField> allUnresolvedFieldReferences = new Set<Schema.SObjectField>(); 
-                    	updateReferenceFieldsInRecords(relationshipsFields,filteredUnresolvedFieldReferences,recordsByOriginalId,originalRecord,allUnresolvedFieldReferences);
-                    // Retain a list of records with unresolved references
-                    	if(allUnresolvedFieldReferences.size()>0)
-                    	{
-                        	if(callback!=null)
-                        	{
-                        		UnresolvedReferences unresolvedReferences = new UnresolvedReferences();
-                        		unresolvedReferences.Record = newRecord;
-                        		unresolvedReferences.References = allUnresolvedFieldReferences;
-                        		callbackUnresolvedReferencesList.add(unresolvedReferences);
-                        	}
-                        	else if(filteredUnresolvedFieldReferences.size()>0)
-                        	{
-                        		UnresolvedReferences unresolvedReferences = new UnresolvedReferences();
-                        		unresolvedReferences.Record = originalRecord;
-                        		unresolvedReferences.References = filteredUnresolvedFieldReferences;
-                        		unresolvedReferencesByRecord.add(unresolvedReferences);
-                        	}
-                    	}
-                    	if(filteredUnresolvedFieldReferences.isEmpty() && callback==null)
-                    	{
-                        	recordsToInsert.add(newRecord);
-                    	}   
-                	}
-                	else
-                	{
-                    	recordsToInsert.add(newRecord);
-                	}
-				}
-            }           
-			List<UnresolvedReferences> newUnResolvedReferenceList = new List<UnresolvedReferences>();
+			}
+            
             // Let the caller attempt to resolve any references the above could not
-            if(callback!=null && callbackUnresolvedReferencesList.size()>0)
+            if(callback != null && !callbackUnresolvedReferencesList.isEmpty())
             {
                 callback.unresolvedReferences(sObjectType, callbackUnresolvedReferencesList);
-                for(UnresolvedReferences callBackUnresolvedReference : callbackUnresolvedReferencesList)
-                {
-                		recordsToInsert.add(callBackUnresolvedReference.Record);
-                }
             }
-           
-            insert recordsToInsert;
-            recordSetBundle.Records = recordsToInsert;
+            
+            insert recordsToInsert.values();
+            recordSetBundle.Records = recordsToInsert.values();
           	processUnresolvedRecords(unresolvedReferencesByRecord, recordsByOriginalId);
         }
-        if(unresolvedReferencesByRecord.size() >0)
+        
+        if(!unresolvedReferencesByRecord.isEmpty())
         {
         	List<Sobject> unresolvedRecordsToInsert = new List<Sobject>();
         	for(UnresolvedReferences unresolvedReference : unresolvedReferencesByRecord)
@@ -558,39 +551,52 @@ public with sharing class SObjectDataLoader
         // Return Id list from the first bundle set
         return new Map<Id, SObject>(recordsBundle.recordSetBundles[0].Records).keySet();
     }
+    
+	
+    /*
+    *  Method clones the deserialized Objects
+    */
+    private static Map<Id, SObject> clonesById(List<RecordSetBundle> bundles) {
+    	Map<Id, SObject> result = new Map<Id, SObject>();
+    	
+    	for(RecordSetBundle recordSetBundle : bundles)
+		{
+			for(SObject originalRecord : recordSetBundle.Records)
+			{
+				if(result.get(originalRecord.Id) == null){
+                    result.put(originalRecord.Id, originalRecord.clone().clone());
+				}
+			}
+		}
+		
+    	return result;
+    }
 	
 	/*
     *  Method to Update foreign key references / lookups / master-detail relationships
     */
-    private static void updateReferenceFieldsInRecords(List<Schema.SObjectField> relationshipsFields,Set<Schema.SObjectField> filteredUnresolvedFieldReferences,Map<Id, SObject> recordsByOriginalId,Sobject orignalRecord,Set<Schema.SObjectField> allUnresolvedFieldReferences)
+    private static void updateReferenceFieldsInRecords(List<Schema.SObjectField> relationshipsFields,Set<Schema.SObjectField> resolvableFieldReferences,Map<Id, SObject> recordsByOriginalId,Sobject orignalRecord,Set<Schema.SObjectField> unresolveableFieldReferences)
     {
     	for(Schema.SObjectField sObjectField : relationshipsFields)
-		{                           
-			// Obtained original related record Id and search map over new records by old Ids
+		{
 			Id oldRelatedRecordId = (Id) orignalRecord.get(sObjectField);
-			if(oldRelatedRecordId!=null )
+			SObject newRelatedRecord = recordsByOriginalId.get(oldRelatedRecordId);
+			
+			if(newRelatedRecord != null && newRelatedRecord.Id != null)
 			{
-				SObject newRelatedRecord = recordsByOriginalId.get(oldRelatedRecordId);
-				Sobject newRecord ;
-				if(newRelatedRecord!=null && newRelatedRecord.Id!=null)
-				{
-					newRecord = recordsByOriginalId.get(orignalRecord.ID);
-					newRecord.put(sObjectField, newRelatedRecord.Id);
-				}
-				else
-				{
-					filteredUnresolvedFieldReferences.add(sObjectField);
-				}
- 			}
- 			else if(allUnresolvedFieldReferences!=null)
+				Sobject newRecord = recordsByOriginalId.get(orignalRecord.Id);
+				newRecord.put(sObjectField, newRelatedRecord.Id);
+			}
+			else if(newRelatedRecord != null)
+			{
+				resolvableFieldReferences.add(sObjectField);
+			}
+ 			else if(unresolveableFieldReferences != null)
  			{
- 				allUnresolvedFieldReferences.add(sObjectField);
+ 				unresolveableFieldReferences.add(sObjectField);
  			}
 		}
-			if(allUnresolvedFieldReferences!=null)
-			{
-				allUnresolvedFieldReferences.addAll(filteredUnresolvedFieldReferences);
-			}
+		
     }
 
  	/*
@@ -600,17 +606,16 @@ public with sharing class SObjectDataLoader
     {
     
    		List<UnresolvedReferences> unresolvedReferences = new List<UnresolvedReferences>(); 
-   		Integer recordsSize = unresolvedReferencesByRecord.size();
-        if(recordsSize >0)
+        if(!unresolvedReferencesByRecord.isEmpty())
         {
-            List<Sobject> insertResolvedRecords = new List<Sobject>();
+            List<Sobject> resolvedRecords = new List<Sobject>();
             for(UnresolvedReferences filteredReference : unresolvedReferencesByRecord)
             {
                 List <Schema.SObjectField> referenceFields = new List<Schema.SObjectField>(filteredReference.References);
                 Set<Schema.SobjectField> filteredreferenceFields = new Set<Schema.SobjectField>();
                 Sobject oldRecord = filteredReference.Record;
                 SObject unprocessedRecord = recordsByOriginalId.get(oldRecord.Id);
-                updateReferenceFieldsInRecords(referenceFields, filteredreferenceFields, recordsByOriginalId, oldRecord,null);
+                updateReferenceFieldsInRecords(referenceFields, filteredreferenceFields, recordsByOriginalId, oldRecord, null);
                 if(filteredreferenceFields.size() >0)
                 {
                      filteredReference.References = filteredreferenceFields;
@@ -618,16 +623,16 @@ public with sharing class SObjectDataLoader
                 }
                 else
                 {
-                     insertResolvedRecords.add(unprocessedRecord);
+                     resolvedRecords.add(unprocessedRecord);
                 }
             }
             unresolvedReferencesByRecord.clear();
             unresolvedReferencesByRecord.addAll(unresolvedReferences);
 
-            if(insertResolvedRecords.size()>0)
+            if(!resolvedRecords.isEmpty())
             {
-                insert insertResolvedRecords;
-                processUnresolvedRecords(unresolvedReferencesByRecord,recordsByOriginalId);
+                insert resolvedRecords;
+                processUnresolvedRecords(unresolvedReferencesByRecord, recordsByOriginalId);
             }       
         }
     }
@@ -760,7 +765,8 @@ public with sharing class SObjectDataLoader
 			if(sObjectFieldDescribe.getType() == Schema.DisplayType.Reference)
 				if(!(config.followRelationships.contains(sObjectField) ||
 					 config.keepRelationshipValues.contains(sObjectField) || 
-				     config.followChildRelationships.contains(sObjectField)))
+				     config.followChildRelationships.contains(sObjectField) ||
+				     sObjectField.getDescribe().getName().equals('RecordTypeId')))
 				   continue;
 			// Serialize this field..						
 			serializeFields.add(sObjectField);
