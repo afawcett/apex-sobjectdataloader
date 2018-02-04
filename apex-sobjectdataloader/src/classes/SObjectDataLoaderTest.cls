@@ -340,7 +340,12 @@ private class SObjectDataLoaderTest {
         Set<Id> childAccountIds = new Set<Id>();
         childAccountIds.add(childAccount2.Id);
         //Records are exported
-        String serializedData = SObjectDataLoader.serialize(childAccountIds);
+        String serializedData = SObjectDataLoader.serialize(
+					childAccountIds, 
+					new SObjectDataLoader.SerializeConfig()
+						.maxLookupDepth(4)
+						.maxChildDepth(4)
+						.follow(Account.ParentId));
         
         Integer recordsBeforeDeletion = [Select count() from Account];
         List<Account> recordsToDelete =  new List<Account>();
