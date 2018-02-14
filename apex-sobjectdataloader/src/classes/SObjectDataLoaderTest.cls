@@ -340,12 +340,12 @@ private class SObjectDataLoaderTest {
         Set<Id> childAccountIds = new Set<Id>();
         childAccountIds.add(childAccount2.Id);
         //Records are exported
-        String serializedData = SObjectDataLoader.serialize(
-					childAccountIds, 
-					new SObjectDataLoader.SerializeConfig()
-						.maxLookupDepth(4)
-						.maxChildDepth(4)
-						.follow(Account.ParentId));
+        String serializedData = /*SObjectDataLoader.serialize(childAccountIds); */
+        SObjectDataLoader.serialize(childAccountIds, 
+							            new SObjectDataLoader.SerializeConfig()
+													            	.maxLookupDepth(4)
+													                .maxChildDepth(4)
+													                .follow(Account.ParentId));
         
         Integer recordsBeforeDeletion = [Select count() from Account];
         List<Account> recordsToDelete =  new List<Account>();
@@ -362,7 +362,7 @@ private class SObjectDataLoaderTest {
         List<Account> recordsAfterDeserialization =[Select Id,Name,ParentId from Account];
         system.assertEquals(recordsBeforeDeletion,recordsAfterDeserialization.size());
         //Verify Parent child Relationship is maintained between Account Objects
-        Account parentAcc = [select Id,Name from Account where Name like 'ParentAccount'];
+        Account parentAcc = [select Id,Name from Account where Name = 'ParentAccount'];
         Account Child1Acc = [select Id,Name from Account where ParentId = :parentAcc.Id ];
         Account Child2Acc = [select Id,Name from Account where ParentId = :Child1Acc.Id ];
         //Account acc =[select a2.Id,a2.Name from Account a2 where a2.ParentId in (select a1.Id from Account a1 where a1.ParentId in (select a.Id from Account where a.Name like 'ParentAccount' ))];
@@ -427,16 +427,16 @@ private class SObjectDataLoaderTest {
         delete testAccount;
         delete testOpportunity;
         
-        Integer accountRecordsAfterDeletion = [Select count() from Account where Name like 'TestAccount'];
+        Integer accountRecordsAfterDeletion = [Select count() from Account where Name = 'TestAccount'];
         system.assertEquals(accountRecordsAfterDeletion,0);
-        Integer opportunityRecordsAfterDeletion = [Select count() from Opportunity where Name like 'TestOpportunity'];
+        Integer opportunityRecordsAfterDeletion = [Select count() from Opportunity where Name = 'TestOpportunity'];
         system.assertEquals(opportunityRecordsAfterDeletion,0);
         
         //Importing Records
         Set<Id> resultIds = SObjectDataLoader.deserialize(serializedData);
-         Integer accountRecordsAfterImport = [Select count() from Account where Name like 'TestAccount'];
+         Integer accountRecordsAfterImport = [Select count() from Account where Name = 'TestAccount'];
         system.assertEquals(accountRecordsAfterImport,1);
-        Integer opportunityRecordsAfterImport = [Select count() from Opportunity where Name like 'TestOpportunity'];
+        Integer opportunityRecordsAfterImport = [Select count() from Opportunity where Name = 'TestOpportunity'];
         system.assertEquals(opportunityRecordsAfterImport,1);
     }  
     
@@ -462,9 +462,9 @@ private class SObjectDataLoaderTest {
 
  		//Importing Records
         Set<Id> resultIds = SObjectDataLoader.deserialize(testObjectJson);
-        List<Account> childAccountRecords = [select Id , ParentId from Account where Name like 'ChildAccount'];
-        List<Account> parentAccountRecords = [select Id from Account where Name like 'Parent Account'];
-        List<Contact> contactRecords = [select Id , AccountId from Contact where Name like 'MyContact'];
+        List<Account> childAccountRecords = [select Id , ParentId from Account where Name = 'ChildAccount'];
+        List<Account> parentAccountRecords = [select Id from Account where Name = 'Parent Account'];
+        List<Contact> contactRecords = [select Id , AccountId from Contact where Name = 'MyContact'];
         
         system.assertEquals(childAccountRecords.size(), 1);
         system.assertEquals(parentAccountRecords.size(), 1);
