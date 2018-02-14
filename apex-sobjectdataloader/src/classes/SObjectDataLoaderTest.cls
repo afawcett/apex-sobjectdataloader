@@ -340,7 +340,7 @@ private class SObjectDataLoaderTest {
         Set<Id> childAccountIds = new Set<Id>();
         childAccountIds.add(childAccount2.Id);
         //Records are exported
-	String serializedData = SObjectDataLoader.serialize(
+	 String serializedData = SObjectDataLoader.serialize(
 					childAccountIds, 
 					new SObjectDataLoader.SerializeConfig()
 						.maxLookupDepth(4)
