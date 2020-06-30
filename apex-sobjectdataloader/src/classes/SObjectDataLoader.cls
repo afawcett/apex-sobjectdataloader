@@ -425,9 +425,9 @@ public with sharing class SObjectDataLoader
 			JSON.deserialize(recordsBundleAsJSON, SObjectDataLoader.RecordsBundle.class);
 		
 		// Get current record types that are in the bundle and see if they exist in the current database
-		Map<String, RecordType> currentRecordTypeMap = new Map<String, RecordType>();
+		Map<Id, RecordType> currentRecordTypeMap = new Map<Id, RecordType>();
 		for (RecordType rt : [SELECT Id, Description, DeveloperName, Name, SobjectType FROM RecordType]) {
-			currentRecordTypeMap.put(rt.SObjectType + '.' + rt.DeveloperName, rt);
+			currentRecordTypeMap.put(rt.Id, rt);
 		} 
 
 		// Create a map from imported record type IDs to new ones
@@ -435,7 +435,7 @@ public with sharing class SObjectDataLoader
 		if (recordsBundle.recordTypeMap != null) {
 			for (RecordType rt : recordsBundle.recordTypeMap.values()) {
 				// Get the current record type that matches the imported one
-				RecordType currentRecordType = currentRecordTypeMap.get(rt.SObjectType + '.' + rt.DeveloperName);
+				RecordType currentRecordType = currentRecordTypeMap.get(rt.Id);
 			
 				// Add this to the map
 				recordTypeIdMap.put(rt.Id, currentRecordType.Id);
@@ -862,7 +862,7 @@ public with sharing class SObjectDataLoader
 			}
 			
 			// Get all of the record types that are included
-			recordTypeMap = new Map<Id, RecordType>([SELECT Id, Description, DeveloperName, Name, SobjectType FROM RecordType WHERE Id=:recordTypeIds]);
+			recordTypeMap = new Map<Id, RecordType>([SELECT Id, Description, DeveloperName, Name, SobjectType FROM RecordType WHERE Id IN :recordTypeIds]);
 						
 		} 		
 	}
