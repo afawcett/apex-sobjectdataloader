@@ -850,6 +850,40 @@ private class SObjectDataLoaderTest {
     }
     
     
+
+	/*
+	* Test Serializing and deserializing records with blob content
+	*/
+	@IsTest(seeAllData=False)
+    private static void testDeserializeBlobContent()
+    {
+    	// Setup   
+        Exception expectedException = null;
+        Account account = new Account(Name = 'Grand Parent');
+        insert account;
+        
+        Attachment file = new Attachment();
+        file.Name = 'Attachment';
+        file.Body = Blob.valueOf('content');
+		file.ParentId = account.Id;
+        insert file;
+        
+        
+        // Execute
+		try {
+            String json = SObjectDataLoader.serialize(new Set<Id>{ account.Id }, new SObjectDataLoader.SerializeConfig()
+                                                      .followChild(Attachment.ParentId));
+            SObjectDataLoader.deserialize(json);
+        }
+        catch (JSONException ex) {
+            expectedException = ex;
+        }
+        
+        //Verify
+        System.assertEquals(null, expectedException);
+    }
+    
+    
     // INNER CLASSES
     
     public class TestCallback implements SObjectDataLoader.IDeserializeCallback {

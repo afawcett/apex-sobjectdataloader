@@ -483,6 +483,8 @@ public with sharing class SObjectDataLoader
 			// Prepare records for insert
 			for(SObject originalRecord : recordSetBundle.Records)
 			{
+                setBlob(recordsBundle, originalRecord, originalRecord.Id);
+                
 				if(!recordsToInsert.containsKey(originalRecord.Id))
 				{
 					SObject newRecord = recordsByOriginalId.get(originalRecord.Id);
@@ -497,6 +499,8 @@ public with sharing class SObjectDataLoader
 						}
 					}
 	
+                    setBlob(recordsBundle, newRecord, originalRecord.Id);
+                    
 	            	if(!relationshipsFields.isEmpty())
 	            	{
 	                	Set<Schema.SObjectField> resolvableFieldReferences = new Set<Schema.SObjectField>();
@@ -554,7 +558,16 @@ public with sharing class SObjectDataLoader
         return new Map<Id, SObject>(recordsBundle.recordSetBundles[0].Records).keySet();
     }
     
-	
+	private static void setBlob(RecordsBundle bundle, SObject record, Id recordId) {
+		if(bundle.blobsByUID != null && bundle.blobsByUID.containsKey(recordId)) {
+			Map<String, Blob> blobByField = bundle.blobsByUID.get(recordId);
+
+			for(String field : blobByField.keySet()) {
+				record.put(field, blobByField.get(field));
+			}
+		}
+	}
+    
     /*
     *  Method clones the deserialized Objects
     */
@@ -836,7 +849,8 @@ public with sharing class SObjectDataLoader
 
 		// Record type map by Ids
 		public Map<Id, RecordType> recordTypeMap;
-		
+		public Map<Id, Map<String, Blob>> blobsByUID = new Map<Id, Map<String, Blob>>();
+        
 		/**
 		 * @description Create a map of the current record types for all of the included records
 		 **/ 
@@ -847,11 +861,13 @@ public with sharing class SObjectDataLoader
 			
 			// Build up a set of record type IDs
 			Set<Id> recordTypeIds = new Set<Id>();
+            Set<String> blobFields = new Set<String>();
+            
 			for (RecordSetBundle bundle : RecordSetBundles) {
-				// Get a map of fields
-				SObjectType accountType = globalDesc.get(bundle.ObjectType);
-				Map<String,Schema.SObjectField> mfields = accountType.getDescribe().fields.getMap();				
-				
+				// Get a map of fields				
+				SObjectType objectType = globalDesc.get(bundle.ObjectType);
+				Map<String,Schema.SObjectField> mfields = objectType.getDescribe().fields.getMap();
+                
 				// If this object contains a record type then step through and get the IDs
 				if (mfields.containsKey('recordtypeid')) {
 					for (SObject obj : bundle.Records) {
@@ -860,15 +876,34 @@ public with sharing class SObjectDataLoader
 						}
 					}					
 				}
-
+                
+                for(String mfield : mfields.keySet()) {
+					if(mfields.get(mfield).getDescribe().getType() == Schema.DisplayType.base64) {
+						blobFields.add(mfield);
+					}
+				}
+				for(SObject record : bundle.Records) {
+					addToBlobsMap(record, blobFields);
+				}
 			}
 			
 			// Get all of the record types that are included
 			recordTypeMap = new Map<Id, RecordType>([SELECT Id, Description, DeveloperName, Name, SobjectType, NamespacePrefix FROM RecordType WHERE Id IN :recordTypeIds]);
 						
-		} 		
+		} 	
+        
+        private void addToBlobsMap(SObject record, Set<String> blobFields) {
+            blobsByUID.put(record.Id, new Map<String, Blob>());
+            
+            for(String field : blobFields) {
+                Blob content = (Blob) record.get(field);
+                blobsByUID.get(record.Id).put(field, content);
+                
+                record.put(field, null);
+            }
+        }
 	}
-	
+    
 	/**
 	 * Internal Apex represnetation of the serialized output for a given recordset
 	 **/
