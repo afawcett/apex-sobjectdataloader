@@ -92,9 +92,12 @@ Json Visualiser and Apex test data(beta version)
 All the following features are in the RecordGeneratorApp which contains the aura component RecordGenerator.
 
 **JSON Visualiser**
-![Alt text](/screenshots/json.png "Json visualiser")
+
+![plot](https://github.com/mickaelgudin/apex-sobjectdataloader/blob/master/screenshots/json.PNG)
+
 **Apex test data(beta version)**
-![Alt text](/screenshots/apex_test.png "Apex test data(beta version)")
+
+![Alt text](https://github.com/mickaelgudin/apex-sobjectdataloader/blob/master/screenshots/apex_test.PNG "Apex test data(beta version)")
 
 Feature Summary
 ---------------
