@@ -87,6 +87,15 @@ Example output
         ]
     }
 
+Json Visualiser and Apex test data(beta version)
+--------------------------------------------------
+All the following features are in the RecordGeneratorApp which contains the aura component RecordGenerator.
+
+**JSON Visualiser**
+![Alt text](/screenshots/json.png "Json visualiser")
+**Apex test data(beta version)**
+![Alt text](/screenshots/apex_test.png "Apex test data(beta version)")
+
 Feature Summary
 ---------------
 

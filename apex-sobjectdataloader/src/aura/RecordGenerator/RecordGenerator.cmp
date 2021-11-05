@@ -1,0 +1,10 @@
+<aura:component controller="RecordGenerator" >
+    <aura:attribute name="id" type="Id" />
+    <aura:attribute name="response" type="String" default="" />
+    
+    <lightning:input label="Id" value="{!v.id}" />
+    <lightning:button label="Generate json" onclick="{!c.generateJSON}"/>
+    <lightning:button label="Generate Apex test data" onclick="{!c.generateApex}"/>
+    
+    <pre>{!v.response}</pre>
+</aura:component>
