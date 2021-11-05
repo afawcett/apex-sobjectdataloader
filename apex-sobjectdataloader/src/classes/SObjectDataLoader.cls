@@ -30,7 +30,7 @@
  *   See https://github.com/afawcett/apex-sobjectdataloader for known issues, restrictions and TODO's
  *
  **/
-public with sharing class SObjectDataLoader 
+global with sharing class SObjectDataLoader 
 {
 	/**
 	 * Configuration uses a Fluent method design (http://en.wikipedia.org/wiki/Fluent_interface), 
@@ -840,7 +840,7 @@ public with sharing class SObjectDataLoader
 	/**
 	 * Internal Apex represnetation of the serialized output for all recordsets
 	 **/
-	private class RecordsBundle
+	global class RecordsBundle
 	{
 		// Order of bundle sets is important
 		public List<RecordSetBundle> RecordSetBundles;			
@@ -907,7 +907,7 @@ public with sharing class SObjectDataLoader
 	/**
 	 * Internal Apex represnetation of the serialized output for a given recordset
 	 **/
-	private class RecordSetBundle
+	global class RecordSetBundle
 	{
 		// Groups records by type
 		public String ObjectType;
